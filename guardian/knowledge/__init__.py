@@ -120,6 +120,16 @@ def make_test_layer(workspace_root: Path) -> KnowledgeLayer:
     return KnowledgeLayer(retriever)
 
 
+from guardian.knowledge.domains import (
+    DOMAINS,
+    STUDY_DIMENSIONS,
+    KnowledgeDomain,
+    KnowledgeLayerEnum,
+    classify_domain_context,
+    get_all_domains,
+    get_domain,
+)
+
 __all__ = [
     "Chunk",
     "Chunker",
@@ -127,13 +137,20 @@ __all__ = [
     "DocumentLoader",
     "Embedder",
     "IngestResult",
+    "KnowledgeDomain",
     "KnowledgeLayer",
+    "KnowledgeLayerEnum",
     "KnowledgeRetriever",
     "MockEmbedder",
     "QueryResult",
     "SearchResult",
     "SentenceTransformerEmbedder",
     "VectorStore",
+    "DOMAINS",
+    "STUDY_DIMENSIONS",
+    "classify_domain_context",
+    "get_all_domains",
+    "get_domain",
     "get_knowledge_layer",
     "make_test_layer",
     "reset_knowledge_layer",
