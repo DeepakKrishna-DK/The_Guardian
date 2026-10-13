@@ -1,0 +1,3 @@
+"""
+Laptop control module.
+"""

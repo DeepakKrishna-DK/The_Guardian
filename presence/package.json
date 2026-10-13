@@ -1,0 +1,17 @@
+{
+  "name": "guardian-presence",
+  "version": "0.1.0",
+  "description": "Guardian Presence — Visual avatar layer (Three.js WebGL). Standalone from guardian/ Python package.",
+  "type": "module",
+  "scripts": {
+    "dev":     "vite --port 5199",
+    "build":   "vite build",
+    "preview": "vite preview --port 5199"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

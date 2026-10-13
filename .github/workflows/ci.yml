@@ -1,0 +1,209 @@
+name: Guardian CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main", "features/**", "fix/**", "hardening/**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PYTHONNOUSERSITE: "1"
+  PYTHONIOENCODING: "utf-8"
+  GUARDIAN_RATE_LIMIT_ENABLED: "false"
+  CI: "true"
+  # Dummy keys — no real external API calls; prevents cloud-backend guard failures
+  GUARDIAN_GROQ_API_KEY: "gsk_ci_placeholder_not_a_real_key_00000000000000000000000000"
+  GUARDIAN_GOOGLE_API_KEY: "AIza_ci_placeholder_000000000000000000000000000000000"
+
+jobs:
+  # ── 1. Lint & Static Analysis ───────────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Lint & Type Tools
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy
+          pip install -r requirements-ci.txt
+          pip install -e . --no-deps
+
+      - name: Ruff Code Quality & Style
+        run: python -m ruff check guardian tests
+
+      - name: Mypy Static Type Verification
+        run: python -m mypy guardian
+
+  # ── 2. Automated Test Matrix ────────────────────────────────────────────────
+  test:
+    name: Tests (${{ matrix.os }})
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install System Audio Library (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2t64 || sudo apt-get install -y --no-install-recommends libasound2 || true
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-ci.txt
+          pip install -e . --no-deps
+
+      - name: Install Windows Desktop Automation Dependencies
+        if: runner.os == 'Windows'
+        run: |
+          pip install pyautogui pywinauto mss pyperclip pillow
+
+      - name: Run Tests (Windows)
+        if: runner.os == 'Windows'
+        env:
+          GUARDIAN_DATA_DIR: ${{ runner.temp }}/guardian_ci_data
+        run: |
+          python -m pytest tests/ \
+            --ignore=tests/test_voice.py \
+            --ignore=tests/test_knowledge.py \
+            --ignore=tests/agent_eval \
+            -q --tb=short
+
+      - name: Run Tests (Linux Headless)
+        if: runner.os == 'Linux'
+        env:
+          GUARDIAN_DATA_DIR: ${{ runner.temp }}/guardian_ci_data
+        run: |
+          python -m pytest tests/ \
+            --ignore=tests/test_voice.py \
+            --ignore=tests/test_knowledge.py \
+            --ignore=tests/agent_eval \
+            --ignore=tests/test_laptop_automation.py \
+            --ignore=tests/test_laptop_control_hardened.py \
+            --ignore=tests/test_laptop_observation.py \
+            --ignore=tests/test_laptop_agent.py \
+            --ignore=tests/test_laptop_agent_safety.py \
+            -q --tb=short \
+            --cov=guardian \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload Coverage Artifact (Linux)
+        uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux' && always()
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  # ── 3. Docker Container Build & In-Container Verification ────────────────────
+  docker:
+    name: Docker Hub Container Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Docker Compose Config
+        run: docker compose config
+
+      - name: Build Guardian Hub Image
+        run: docker build -t guardian-hub:ci .
+
+      - name: Run Gateway & Core Suite inside Container
+        run: |
+          docker run --rm guardian-hub:ci pytest \
+            tests/test_remote_gateway_e2e.py \
+            tests/test_security_gateway.py \
+            tests/test_social_engineering.py \
+            tests/test_audit_log.py \
+            tests/test_canary_system.py \
+            -v
+
+      - name: Verify Gateway CLI inside Container
+        run: docker run --rm guardian-hub:ci python -m guardian gateway --help
+
+  # ── 4. Security, Audit & Vendor Lock-In Audit ────────────────────────────────
+  security-audit:
+    name: Security & Architecture Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Verify Zero Proprietary Vendor Lock-In
+        run: |
+          echo "Scanning codebase for proprietary Tailscale API/SDK calls..."
+          ! git grep -E "(import[[:space:]]+tailscale|from[[:space:]]+tailscale)" guardian/
+          echo "Passed: 0 proprietary vendor imports found."
+
+      - name: Install Audit Tools
+        run: |
+          pip install --upgrade pip
+          pip install pip-audit pip-licenses
+          pip install -r requirements-docker.txt
+          pip install -e . --no-deps
+
+      - name: Dependency Vulnerability Audit (pip-audit)
+        run: pip-audit -r requirements-docker.txt --strict
+
+      - name: License Compliance Check
+        run: pip-licenses --format=markdown --order=license --fail-on "GPLv3;AGPLv3;GPLv2"
+
+  # ── 5. CD Package Distribution ──────────────────────────────────────────────
+  cd-package:
+    name: Build Distribution Packages
+    needs: [lint, test, docker, security-audit]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Build Tools
+        run: |
+          pip install --upgrade pip
+          pip install build wheel
+
+      - name: Build Python Wheel & Source Distribution
+        run: python -m build
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-dist
+          path: dist/

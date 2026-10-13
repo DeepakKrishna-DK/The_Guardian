@@ -1,0 +1,131 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guardian"
+version = "0.1.0"
+description = "AI Guardian - Personal AI System"
+requires-python = ">=3.13"
+dependencies = [
+    "typer>=0.27",
+    "rich>=15.0",
+    "pydantic-settings>=2.15",
+    "python-dotenv>=1.2",
+    "psutil>=7.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0"]
+
+[project.scripts]
+guardian = "guardian.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["guardian*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+env = ["PYTHONNOUSERSITE=1"]
+
+[tool.ruff]
+line-length = 120
+exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "logs",
+    "presence",
+    "scripts",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "B"]
+ignore = [
+    "E501",
+    "E701",
+    "E702",
+    "E712",
+    "E722",
+    "E741",
+    "E402",
+    "B904",
+    "B007",
+    "B008",
+    "B017",
+    "F841",
+    "F401",
+    "F541",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
+"tests/**/*.py" = ["F811", "F401"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = [
+    "guardian.audit",
+    "guardian.audit.*",
+    "guardian.telemetry",
+    "guardian.telemetry.*",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_any_generics = true
+warn_return_any = true
+no_implicit_optional = true
+strict_equality = true
+
+# LEGACY - ratchet down
+[[tool.mypy.overrides]]
+module = [
+    "guardian.cli",
+    "guardian.core",
+    "guardian.core.*",
+    "guardian.guardrails",
+    "guardian.guardrails.*",
+    "guardian.knowledge",
+    "guardian.knowledge.*",
+    "guardian.mcp",
+    "guardian.mcp.server",
+    "guardian.memory",
+    "guardian.memory.*",
+    "guardian.model",
+    "guardian.model.*",
+    "guardian.security",
+    "guardian.security.*",
+    "guardian.skills",
+    "guardian.skills.*",
+    "guardian.tools",
+    "guardian.tools.*",
+    "guardian.voice",
+    "guardian.voice.*",
+    "guardian.config",
+    "guardian.config.*",
+    "guardian.logging",
+    "guardian.logging.*",
+    "guardian.policy",
+    "guardian.policy.*",
+    "guardian.laptop",
+    "guardian.laptop.*",
+    "guardian.gateway",
+    "guardian.gateway.*",
+    "guardian.vision",
+    "guardian.vision.*",
+    "guardian.techniques",
+    "guardian.techniques.*",
+]
+ignore_errors = true

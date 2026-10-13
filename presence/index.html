@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guardian Presence — Holographic Head</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    canvas { display: block; }
+
+    #hud {
+      position: fixed; top: 14px; left: 14px;
+      color: #00ffff; font-size: 12px;
+      background: rgba(0, 20, 40, 0.7);
+      padding: 10px 14px; border-radius: 4px;
+      border: 1px solid rgba(0, 255, 255, 0.3);
+      line-height: 1.8; pointer-events: none; z-index: 10;
+    }
+    #hud .label { color: rgba(0, 255, 255, 0.6); font-size: 10px; }
+
+    #phase-badge {
+      position: fixed; top: 14px; right: 14px;
+      color: rgba(0, 255, 255, 0.6); font-size: 10px;
+      background: rgba(0, 20, 40, 0.7);
+      padding: 6px 10px; border-radius: 4px;
+      pointer-events: none; z-index: 10;
+    }
+
+    #loading-msg {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: #00ffff; font-size: 14px; text-transform: uppercase; letter-spacing: 2px;
+      pointer-events: none; z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="label">GUARDIAN PRESENCE</div>
+    <div id="fps">FPS: --</div>
+    <div id="state">State: idle</div>
+  </div>
+  <div id="phase-badge">PHASE P2 — Holographic Projection</div>
+  <div id="loading-msg">INITIALIZING HOLOGRAPHIC MATRIX...</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

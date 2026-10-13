@@ -1,0 +1,65 @@
+# Guardian — .gitignore
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs (keep structure, not content)
+logs/*.log
+logs/*.jsonl
+logs/laptop_runs/
+
+# Guardian runtime data (not committed)
+data/
+memory/*.db
+memory/*.db-shm
+memory/*.db-wal
+cache/
+.guardian/voice_out/
+.guardian/canaries/
+.guardian/canary_registry.json
+
+# Database files
+*.db
+*.sqlite*
+
+# Frontend builds
+presence/dist/
+presence/node_modules/
+
+# Scratch generator files
+build_gateway.py
+build_tests.py
+create_gateway.py

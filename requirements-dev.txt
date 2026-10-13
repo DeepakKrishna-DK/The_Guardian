@@ -1,0 +1,9 @@
+# Development / CI dependencies
+ruff==0.16.8
+mypy==2.3.1
+pytest-cov==7.1.0
+pip-audit==2.10.1
+pip-licenses==5.5.5
+pre-commit==4.6.2
+PyYAML==6.0.3
+pytest-env==1.7.1
