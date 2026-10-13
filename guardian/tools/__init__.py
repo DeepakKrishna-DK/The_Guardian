@@ -50,6 +50,7 @@ def _build_default_executor(sandbox: Path | None = None) -> ToolExecutor:
     from guardian.tools.db_query import DbQueryTool
     from guardian.tools.vision_analyze import VisionAnalyzeTool
     from guardian.tools.social_engineering_tool import SocialEngineeringDefenseTool
+    from guardian.tools.web_research_tool import WebResearchTool
     
     exe.register(CodeExecTool())
     exe.register(GitReadTool())
@@ -58,6 +59,7 @@ def _build_default_executor(sandbox: Path | None = None) -> ToolExecutor:
     exe.register(DbQueryTool())
     exe.register(VisionAnalyzeTool())
     exe.register(SocialEngineeringDefenseTool())
+    exe.register(WebResearchTool())
     
     # M2: Register skills as tools
     from guardian.skills import get_skill_registry
@@ -98,6 +100,7 @@ __all__ = [
     "ToolLevel",
     "ToolRequest",
     "ToolResult",
+    "WebResearchTool",
     "get_tool_executor",
     "reset_tool_executor",
 ]
