@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import bs4
+try:
+    import bs4
+except ImportError:
+    bs4 = None  # type: ignore[assignment]
 import httpx
 
 from guardian.logging.logger import get_logger
@@ -90,18 +93,24 @@ class PageExtractor:
         except Exception as e:
             return ExtractedPage(url=url, success=False, error=f"Fetch failed: {e}")
 
-        # Step 3: Parse and extract text using BeautifulSoup
+        # Step 3: Parse and extract text using BeautifulSoup or fallback
         try:
-            soup = bs4.BeautifulSoup(html_text, "html.parser")
+            if bs4 is not None:
+                soup = bs4.BeautifulSoup(html_text, "html.parser")
 
-            # Remove non-content elements
-            for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "iframe"]):
-                tag.decompose()
+                # Remove non-content elements
+                for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "iframe"]):
+                    tag.decompose()
 
-            title = (soup.title.string or "").strip() if soup.title else ""
+                title = (soup.title.string or "").strip() if soup.title else ""
+                body_text = soup.get_text(separator="\n")
+            else:
+                import re
+                clean = re.sub(r"<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>", "", html_text, flags=re.DOTALL | re.IGNORECASE)
+                m = re.search(r"<title[^>]*>(.*?)</title>", html_text, flags=re.DOTALL | re.IGNORECASE)
+                title = m.group(1).strip() if m else ""
+                body_text = re.sub(r"<[^>]+>", " ", clean)
 
-            # Extract body text
-            body_text = soup.get_text(separator="\n")
             cleaned_text = sanitize_web_content(body_text)
 
             return ExtractedPage(

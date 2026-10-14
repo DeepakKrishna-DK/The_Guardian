@@ -20,11 +20,21 @@ class AgentScope:
 
 
 class SubAgent:
-    def __init__(self, name: str, scope: AgentScope):
+    def __init__(self, name: str, scope: AgentScope, executor: Any = None):
         self.name = name
         self.scope = scope
-        self.executor = get_tool_executor()
+        self._executor = executor
         self.engine = get_policy_engine()
+
+    @property
+    def executor(self) -> Any:
+        if self._executor is not None:
+            return self._executor
+        return get_tool_executor()
+
+    @executor.setter
+    def executor(self, val: Any) -> None:
+        self._executor = val
 
     def execute_step(self, tool_name: str, params: dict[str, Any], session_id: str = "") -> ToolResult:
         """

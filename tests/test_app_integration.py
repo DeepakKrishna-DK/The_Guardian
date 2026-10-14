@@ -17,7 +17,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-import pymupdf
+
+try:
+    import pymupdf
+except ImportError:
+    pymupdf = None  # type: ignore[assignment]
 
 import app as app_module
 from guardian.research.academic import AcademicPaper
@@ -125,6 +129,9 @@ class TestFileUpload:
         assert data["chunks_indexed"] >= 1
 
     def test_upload_pdf_file(self, client: TestClient):
+        if pymupdf is None:
+            pytest.skip("pymupdf is not installed")
+
         # Generate valid in-memory PDF using PyMuPDF
         doc = pymupdf.open()
         page = doc.new_page()

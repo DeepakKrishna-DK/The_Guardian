@@ -25,7 +25,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import pymupdf  # PyMuPDF for PDF ingestion
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -372,12 +371,19 @@ async def upload_document(file: UploadFile = File(...)):
     extension = Path(filename).suffix.lower()
     extracted_text = ""
 
-    # PDF extraction using PyMuPDF (fitz)
+    # PDF extraction using pypdf or PyMuPDF
     if extension == ".pdf":
         try:
-            doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-            extracted_text = "\n\n".join(doc[i].get_text() for i in range(len(doc)))
-            doc.close()
+            try:
+                import io
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                extracted_text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+            except ImportError:
+                import pymupdf
+                doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+                extracted_text = "\n\n".join(doc[i].get_text() for i in range(len(doc)))
+                doc.close()
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to parse PDF document: {e}")
     elif extension in (".txt", ".md", ".json", ".csv"):

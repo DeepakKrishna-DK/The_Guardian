@@ -2,6 +2,7 @@
 # Excludes heavy ML runtimes (torch, sentence-transformers, pywin32) for fast build & migration
 aiohttp>=3.9
 anyio>=4.0
+beautifulsoup4>=4.12.0
 certifi
 click>=8.0
 cryptography>=42
@@ -22,6 +23,7 @@ pydantic-settings>=2.0
 psutil>=7.0
 pypdf>=4.0
 python-dotenv>=1.0
+python-multipart>=0.0.12
 PyYAML>=6.0
 requests>=2.31
 rich>=13.0
