@@ -36,6 +36,7 @@ from guardian.prompts import UIRA_MASTER_SYSTEM_PROMPT_V1
 from guardian.research.academic import AcademicResearchClient
 from guardian.web.search import WebSearchClient
 from guardian.web.security import sanitize_web_content
+from semantic_search import EMBEDDING_MODEL, hybrid_search, init_embeddings_table
 
 load_dotenv()
 log = get_logger("universal_ai_app")
@@ -106,6 +107,7 @@ def init_db() -> None:
                 tokenize='porter unicode61'
             )
         """)
+        init_embeddings_table(conn)
         conn.commit()
     log.info(f"Database initialized at: {DB_PATH}")
 
@@ -125,52 +127,8 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 
 
 def search_local_knowledge(query: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Query SQLite FTS5 table for matching document chunks."""
-    cleaned_query = re.sub(r"[^\w\s]", "", query).strip()
-    if not cleaned_query:
-        return []
-
-    # FTS query tokens joined by OR
-    fts_tokens = " OR ".join(cleaned_query.split()[:8])
-    results = []
-
-    with get_db_connection() as conn:
-        try:
-            cursor = conn.execute("""
-                SELECT c.content, c.chunk_index, d.filename, d.id as doc_id, rank
-                FROM chunks_fts(?) f
-                JOIN chunks c ON c.document_id = f.document_id AND c.chunk_index = f.chunk_index
-                JOIN documents d ON d.id = c.document_id
-                ORDER BY rank
-                LIMIT ?
-            """, (fts_tokens, limit))
-            for row in cursor.fetchall():
-                results.append({
-                    "content": row["content"],
-                    "filename": row["filename"],
-                    "document_id": row["doc_id"],
-                    "chunk_index": row["chunk_index"],
-                    "score": round(-float(row["rank"]), 3) if row["rank"] is not None else 1.0,
-                })
-        except sqlite3.OperationalError as e:
-            log.warning(f"FTS search error ({e}), falling back to LIKE...")
-            cursor = conn.execute("""
-                SELECT c.content, c.chunk_index, d.filename, d.id as doc_id
-                FROM chunks c
-                JOIN documents d ON d.id = c.document_id
-                WHERE c.content LIKE ?
-                LIMIT ?
-            """, (f"%{cleaned_query[:30]}%", limit))
-            for row in cursor.fetchall():
-                results.append({
-                    "content": row["content"],
-                    "filename": row["filename"],
-                    "document_id": row["doc_id"],
-                    "chunk_index": row["chunk_index"],
-                    "score": 0.5,
-                })
-
-    return results
+    """Hybrid retrieval combining FTS5 keyword and semantic vector search."""
+    return hybrid_search(query, DB_PATH, limit=limit, auto_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -298,17 +256,23 @@ def health_check():
     with get_db_connection() as conn:
         doc_count = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
         chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        try:
+            embed_count = conn.execute("SELECT COUNT(*) FROM chunk_embeddings").fetchone()[0]
+        except sqlite3.OperationalError:
+            embed_count = 0
 
     return {
         "status": "healthy",
         "model_configured": bool(MODEL_BASE_URL and MODEL_API_KEY),
         "model_name": MODEL_NAME,
+        "embedding_model": EMBEDDING_MODEL,
         "web_search_available": bool(os.getenv("TAVILY_API_KEY") or os.getenv("BRAVE_API_KEY")),
         "academic_search_available": True,
         "database": {
             "path": str(DB_PATH),
             "documents_indexed": doc_count,
             "chunks_indexed": chunk_count,
+            "chunks_embedded": embed_count,
         },
     }
 
@@ -440,10 +404,10 @@ async def ask_question(req: AskRequest):
         "academic_searched": False,
     }
 
-    # 1. Local Knowledge Base Search
+    # 1. Local Knowledge Base Search (Hybrid RRF: FTS5 + Semantic Vectors)
     if req.use_knowledge:
         research_status["knowledge_searched"] = True
-        kb_results = search_local_knowledge(req.question, limit=req.max_sources)
+        kb_results = await asyncio.to_thread(hybrid_search, req.question, DB_PATH, req.max_sources)
         if kb_results:
             kb_lines = []
             for r in kb_results:
@@ -453,6 +417,10 @@ async def ask_question(req: AskRequest):
                     "identifier": src_tag,
                     "filename": r["filename"],
                     "content": r["content"],
+                    "score": r.get("score"),
+                    "rrf_score": r.get("rrf_score"),
+                    "semantic_rank": r.get("semantic_rank"),
+                    "keyword_rank": r.get("keyword_rank"),
                 })
                 kb_lines.append(f"{src_tag}\n{r['content']}")
             evidence_blocks.append("### Local Knowledge Excerpts:\n" + "\n\n".join(kb_lines))
