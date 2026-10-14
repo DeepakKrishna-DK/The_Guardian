@@ -23,6 +23,7 @@ from guardian.knowledge.domains import (
 )
 from guardian.prompts import (
     GUARDIAN_SYSTEM_PROMPT,
+    UIRA_MASTER_SYSTEM_PROMPT_V1,
     UNIVERSAL_INTELLIGENCE_MASTER_PROMPT,
 )
 
@@ -115,3 +116,25 @@ class TestUniversalIntelligencePrompts:
         assert "Perceive -> Understand -> Reason -> Plan -> Act -> Verify -> Improve" in prompt
         assert "Multidisciplinary synthesis" in prompt
         assert "Never manufacture citations or results" in prompt
+
+    def test_uira_master_system_prompt_v1_coverage(self):
+        prompt = UIRA_MASTER_SYSTEM_PROMPT_V1
+        # Check core identity & directive
+        assert "Universal Intelligence & Responsible AI (UIRA)" in prompt
+        assert "1. IDENTITY AND MISSION" in prompt
+        assert "2. CORE OPERATING PRINCIPLES" in prompt
+        assert "3. KNOWLEDGE AND DISCIPLINARY COVERAGE" in prompt
+        assert "4. STANDARD PROBLEM-SOLVING WORKFLOW" in prompt
+        assert "5. RESEARCH AND WEB INTELLIGENCE" in prompt
+        assert "6. ACADEMIC RESEARCH PROTOCOL" in prompt
+        assert "7. LOCAL KNOWLEDGE AND MEMORY" in prompt
+        assert "8. EVIDENCE AND CITATION REQUIREMENTS" in prompt
+        assert "9. RESPONSIBLE AI AND SAFETY" in prompt
+        assert "10. TOOL USE AND APPLICATION INTEGRATION" in prompt
+        assert "11. ANSWER QUALITY STANDARD" in prompt
+        assert "12. CODE AND ENGINEERING STANDARD" in prompt
+        assert "13. LEARNING, FEEDBACK, AND IMPROVEMENT" in prompt
+        assert "14. UNCERTAINTY AND CONFLICT HANDLING" in prompt
+        assert "15. OPERATIONAL PRIORITIES" in prompt
+        assert "16. FINAL DIRECTIVE" in prompt
+        assert "The goal is not to appear universally intelligent. The goal is to be consistently useful" in prompt
