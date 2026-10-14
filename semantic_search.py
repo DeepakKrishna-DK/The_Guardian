@@ -75,7 +75,34 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 def init_embeddings_table(conn: sqlite3.Connection) -> None:
-    """Create chunk_embeddings table if it does not exist."""
+    """Create knowledge schema and chunk_embeddings table if they do not exist."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id TEXT PRIMARY KEY,
+            filename TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL,
+            char_count INTEGER NOT NULL,
+            chunk_count INTEGER NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chunks (
+            id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+            content,
+            document_id UNINDEXED,
+            chunk_index UNINDEXED,
+            tokenize='porter unicode61'
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chunk_embeddings (
             chunk_id TEXT NOT NULL,
@@ -118,13 +145,16 @@ def index_missing_chunks(
         log.info("SentenceTransformer unavailable; skipping embedding generation.")
         return 0
 
-    cursor = conn.execute("""
-        SELECT c.id, c.content
-        FROM chunks c
-        LEFT JOIN chunk_embeddings ce ON ce.chunk_id = c.id AND ce.model = ?
-        WHERE ce.chunk_id IS NULL
-    """, (model_name,))
-    unindexed = cursor.fetchall()
+    try:
+        cursor = conn.execute("""
+            SELECT c.id, c.content
+            FROM chunks c
+            LEFT JOIN chunk_embeddings ce ON ce.chunk_id = c.id AND ce.model = ?
+            WHERE ce.chunk_id IS NULL
+        """, (model_name,))
+        unindexed = cursor.fetchall()
+    except sqlite3.OperationalError:
+        return 0
 
     if not unindexed:
         return 0
