@@ -20,6 +20,12 @@ from typing import Any
 import requests
 import streamlit as st
 
+from guardian.model.catalog import get_candidate_catalog
+from guardian.model.task_router import get_task_router
+from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1
+from guardian.security.advisory import RuleAction, generate_firewall_advisory
+
+
 # ---------------------------------------------------------------------------
 # Configuration & Page Setup
 # ---------------------------------------------------------------------------
@@ -159,10 +165,12 @@ with st.sidebar:
 # Main Tabs: Research, Knowledge Base, Ontology & Diagnostics
 # ---------------------------------------------------------------------------
 
-tab_chat, tab_kb, tab_ontology, tab_diag = st.tabs([
+tab_chat, tab_kb, tab_ontology, tab_models, tab_security, tab_diag = st.tabs([
     "💬 Research & Synthesis",
     "📚 Document Library & Ingestion",
     "🧭 25 Knowledge Domains & Ontology",
+    "🤖 Multi-Model Catalog & Routing",
+    "🛡️ Defensive Security & Firewall",
     "🛠️ System Diagnostics",
 ])
 
@@ -391,7 +399,155 @@ with tab_ontology:
 
 
 # ---------------------------------------------------------------------------
-# TAB 4: System Diagnostics
+# TAB 4: Multi-Model Catalog & Intelligent Routing (Sections 3, 4, 5, 6, 17)
+# ---------------------------------------------------------------------------
+
+with tab_models:
+    st.markdown('<div class="main-title">Multi-Model Catalog & Task Orchestration</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="subtitle">Discovery, capability verification, hardware assessment, and routing across candidate specialist models.</div>',
+        unsafe_allow_html=True,
+    )
+
+    catalog = get_candidate_catalog()
+    all_candidates = catalog.list_all()
+
+    # Routing Sandbox at the top
+    st.subheader("⚡ Intelligent Task Routing Sandbox (Section 5 & 17)")
+    col_rq, col_flags = st.columns([3, 1])
+    with col_rq:
+        route_query = st.text_input(
+            "Enter a user prompt to simulate intelligent routing:",
+            value="Examine this screenshot and write a Python script to parse the table, then check for security vulnerabilities.",
+        )
+    with col_flags:
+        chk_img = st.checkbox("Image attached", value=True)
+        chk_aud = st.checkbox("Audio attached", value=False)
+        chk_pdf = st.checkbox("PDF attached", value=False)
+
+    if st.button("🚀 Evaluate Route & Multi-Model Allocation", use_container_width=True):
+        router = get_task_router()
+        decision = router.route_request(
+            query=route_query,
+            has_images=chk_img,
+            has_audio=chk_aud,
+            has_pdf=chk_pdf,
+        )
+
+        r1, r2 = st.columns([1, 1])
+        with r1:
+            st.markdown("#### 🎯 Routing Result")
+            st.markdown(decision.format_routing_report())
+        with r2:
+            st.markdown("#### 🤝 Multi-Model Collaboration Plan (Section 6)")
+            if decision.collaborators:
+                for c in decision.collaborators:
+                    st.info(f"**Role: {c['role'].upper()}** ➔ `{c['model']}`")
+            else:
+                st.caption("Single specialist model sufficient for this task. No secondary invocation needed.")
+
+    st.markdown("---")
+    st.subheader(f"📋 Candidate Model Registry ({len(all_candidates)} Proposed Models)")
+    st.caption("Section 3 Rule: Treat every model ID as a CANDIDATE. Verify capabilities, hardware, and safety sandbox before activation.")
+
+    # Filter row
+    f1, f2 = st.columns(2)
+    with f1:
+        mod_filter = st.selectbox("Filter by Modality", ["All", "text", "image", "audio", "video", "pdf"])
+    with f2:
+        dep_filter = st.selectbox("Filter by Deployment", ["All", "local", "hosted", "hybrid"])
+
+    filtered_entries = catalog.filter(
+        modality=None if mod_filter == "All" else mod_filter,
+        deployment=None if dep_filter == "All" else dep_filter,
+    )
+
+    for entry in filtered_entries:
+        eligibility = catalog.verify_candidate_eligibility(entry.model_id)
+        with st.expander(
+            f"#{entry.candidate_number} | {entry.model_id} ({entry.family}) — [{entry.deployment.value.upper()}]",
+            expanded=False,
+        ):
+            c_info, c_specs = st.columns([2, 1])
+            with c_info:
+                st.markdown(f"**Capability Tags:** `{'`, `'.join(entry.capability_tags)}`")
+                st.markdown(f"**Modalities:** In: `{', '.join(entry.input_modalities)}` ➔ Out: `{', '.join(entry.output_modalities)}`")
+                st.markdown(f"**Runtime & Dependencies:** `{entry.required_runtime}` ({', '.join(entry.required_dependencies)})")
+                st.markdown(f"**License:** {entry.license}")
+                if entry.known_limitations:
+                    st.warning(f"**Known Limitations:** {'; '.join(entry.known_limitations)}")
+                if entry.requires_custom_code:
+                    st.error("⚠️ **Security Alert:** Requires `trust_remote_code=True`. Sandbox execution required.")
+                if eligibility["warnings"]:
+                    for w in eligibility["warnings"]:
+                        st.caption(f"• {w}")
+
+            with c_specs:
+                st.markdown("**Estimated Hardware Requirements:**")
+                st.write(f"- Min RAM: **{entry.estimated_hardware.min_ram_gb:.0f} GB**")
+                st.write(f"- Min VRAM: **{entry.estimated_hardware.min_vram_gb:.0f} GB**")
+                st.write(f"- Disk Storage: **{entry.estimated_hardware.disk_gb:.0f} GB**")
+                st.write(f"- Context Window: **{entry.estimated_hardware.context_window:,} tokens**")
+                st.write(f"- Recommended Host: {entry.estimated_hardware.recommended_gpu}")
+
+            st.markdown("**Example Loading & Pipeline Snippet:**")
+            st.code(entry.code_snippet, language="python")
+
+
+# ---------------------------------------------------------------------------
+# TAB 5: Defensive Security & Firewall Advisory (Sections 7, 8, 17)
+# ---------------------------------------------------------------------------
+
+with tab_security:
+    st.markdown('<div class="main-title">Guardian Defensive Security Engine</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="subtitle">Advisory and read-only defensive policy, anomaly triage, and evidence-grounded firewall recommendations.</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.info(
+        "🛡️ **Defensive Boundary (Section 8):** Default mode is **ADVISORY and READ-ONLY**. "
+        "Direct changes to firewalls, endpoint protections, or network routing require explicit human confirmation.",
+        icon="ℹ️",
+    )
+
+    st.subheader("📝 Draft Defensive Firewall Recommendation")
+    with st.form("firewall_advisory_form"):
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fw_evidence = st.text_input(
+                "Observed Evidence",
+                value="Repeated brute force SSH auth failures (>50/min) from IP 198.51.100.42",
+            )
+            fw_scope = st.text_input("Source & Destination Scope", value="SRC: 198.51.100.42 ➔ DST: 10.0.1.5 (Production Gateway)")
+            fw_ports = st.text_input("Protocol & Ports", value="TCP / 22 (SSH)")
+            fw_action = st.selectbox("Action", ["DROP", "REJECT", "RATE_LIMIT", "ISOLATE", "LOG_ONLY"])
+            fw_outcome = st.text_input("Intended Security Outcome", value="Mitigate automated credential brute-forcing against gateway SSH.")
+        with col_f2:
+            fw_impact = st.text_input("Expected Operational Impact", value="Zero impact on legitimate users; source is an external untrusted IP.")
+            fw_fp = st.text_input("Potential False Positives", value="Remote engineer travelling in subnet 198.51.100.0/24.")
+            fw_rollback = st.text_input("Rollback Plan", value="iptables -D INPUT -s 198.51.100.42 -p tcp --dport 22 -j DROP")
+            fw_verify = st.text_input("Verification Procedure", value="tcpdump -i eth0 host 198.51.100.42 and verify packet drop counter.")
+
+        submitted = st.form_submit_button("Generate Evidence-Grounded Security Advisory", use_container_width=True)
+
+    if submitted:
+        advisory = generate_firewall_advisory(
+            evidence=fw_evidence,
+            src_dest=fw_scope,
+            ports=fw_ports,
+            outcome=fw_outcome,
+            impact=fw_impact,
+            false_positives=fw_fp,
+            rollback=fw_rollback,
+            verification=fw_verify,
+            action=RuleAction(fw_action),
+        )
+        st.markdown(advisory.format_markdown())
+
+
+# ---------------------------------------------------------------------------
+# TAB 6: System Diagnostics
 # ---------------------------------------------------------------------------
 
 with tab_diag:

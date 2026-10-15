@@ -32,8 +32,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from guardian.logging.logger import get_logger
-from guardian.prompts import UIRA_MASTER_SYSTEM_PROMPT_V1
+from guardian.model.catalog import get_candidate_catalog
+from guardian.model.task_router import get_task_router
+from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1, UIRA_MASTER_SYSTEM_PROMPT_V1
 from guardian.research.academic import AcademicResearchClient
+from guardian.security.advisory import (
+    DefensiveFirewallRecommendation,
+    SecurityFindingReport,
+    SeverityLevel,
+    generate_firewall_advisory,
+)
 from guardian.web.search import WebSearchClient
 from guardian.web.security import sanitize_web_content
 from semantic_search import EMBEDDING_MODEL, hybrid_search, init_embeddings_table
@@ -58,8 +66,8 @@ MODEL_BASE_URL = os.getenv("MODEL_BASE_URL", "").strip()
 MODEL_API_KEY = os.getenv("MODEL_API_KEY", "").strip()
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3.2:3b").strip()
 
-# System prompt — UIRA Master System Prompt Version 1.0
-UNIVERSAL_SYSTEM_PROMPT = UIRA_MASTER_SYSTEM_PROMPT_V1
+# System prompt — GUARDIAN AI Master System Prompt Version 1.0
+UNIVERSAL_SYSTEM_PROMPT = GUARDIAN_MASTER_SYSTEM_PROMPT_V1
 
 
 # ---------------------------------------------------------------------------
@@ -505,3 +513,107 @@ def list_documents():
         cursor = conn.execute("SELECT id, filename, file_type, uploaded_at, char_count, chunk_count FROM documents")
         docs = [dict(row) for row in cursor.fetchall()]
     return {"documents": docs, "total": len(docs)}
+
+
+# ---------------------------------------------------------------------------
+# Model Registry & Intelligent Orchestration Endpoints (Sections 3, 4, 5, 8, 17)
+# ---------------------------------------------------------------------------
+
+class TaskRouteRequest(BaseModel):
+    query: str
+    has_images: bool = False
+    has_audio: bool = False
+    has_pdf: bool = False
+    require_local: bool = False
+
+
+class FirewallAdvisoryRequest(BaseModel):
+    evidence: str
+    source_dest: str
+    protocol_ports: str
+    intended_outcome: str
+    expected_impact: str
+    potential_false_positives: str
+    rollback_plan: str
+    verification_procedure: str
+    action: str = "DROP"
+
+
+@app.get("/models/catalog")
+def get_model_catalog(
+    modality: Optional[str] = None,
+    tag: Optional[str] = None,
+    deployment: Optional[str] = None,
+):
+    """
+    List all candidate models from the Section 4 Initial Model Catalog,
+    including eligibility verification and hardware requirement analysis.
+    """
+    catalog = get_candidate_catalog()
+    entries = catalog.filter(modality=modality, tag=tag, deployment=deployment)
+    
+    catalog_data = []
+    for e in entries:
+        d = e.to_dict()
+        d["eligibility"] = catalog.verify_candidate_eligibility(e.model_id)
+        catalog_data.append(d)
+        
+    return {
+        "catalog_version": "1.0",
+        "total_candidate_models": len(catalog_data),
+        "models": catalog_data,
+    }
+
+
+@app.post("/models/route")
+def route_task(req: TaskRouteRequest):
+    """
+    Classify query and determine minimal suitable model/tool set per Section 5,
+    formatted according to Section 17 Standard Response Format.
+    """
+    router = get_task_router()
+    decision = router.route_request(
+        query=req.query,
+        has_images=req.has_images,
+        has_audio=req.has_audio,
+        has_pdf=req.has_pdf,
+        require_local=req.require_local,
+    )
+    return {
+        "decision": decision.to_dict(),
+        "routing_report": decision.format_routing_report(),
+    }
+
+
+@app.post("/security/advisory")
+def create_firewall_advisory(req: FirewallAdvisoryRequest):
+    """
+    Generate an 8-point defensive firewall advisory per Section 8 & Section 17.
+    Default mode is ADVISORY and READ-ONLY. Human confirmation required.
+    """
+    advisory = generate_firewall_advisory(
+        evidence=req.evidence,
+        src_dest=req.source_dest,
+        ports=req.protocol_ports,
+        outcome=req.intended_outcome,
+        impact=req.expected_impact,
+        false_positives=req.potential_false_positives,
+        rollback=req.rollback_plan,
+        verification=req.verification_procedure,
+    )
+    return {
+        "advisory": advisory.to_dict(),
+        "markdown": advisory.format_markdown(),
+    }
+
+
+@app.get("/system/prompt")
+def get_system_prompt():
+    """Return the active Guardian Master System Prompt Version 1.0."""
+    return {
+        "version": "1.0",
+        "title": "GUARDIAN AI — MASTER SYSTEM PROMPT: Universal Intelligence & Responsible AI",
+        "sections": 18,
+        "prompt": GUARDIAN_MASTER_SYSTEM_PROMPT_V1,
+    }
+

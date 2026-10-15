@@ -21,19 +21,48 @@ from guardian.model.interface import (
     Role,
     TokenUsage,
 )
+from guardian.model.catalog import (
+    CandidateModelCatalog,
+    HardwareRequirement,
+    ModelCandidateEntry,
+    ModelDeployment,
+    ModelHealthStatus,
+    TrustLevel,
+    get_candidate_catalog,
+)
 from guardian.model.registry import get_model, get_registry
+from guardian.model.task_router import (
+    CollaborationRole,
+    IntelligentTaskRouter,
+    RoutingDecision,
+    TaskType,
+    get_task_router,
+)
 
 __all__ = [
     "BackendInfo",
+    "CandidateModelCatalog",
+    "CollaborationRole",
+    "HardwareRequirement",
+    "IntelligentTaskRouter",
     "Message",
+    "ModelCandidateEntry",
+    "ModelDeployment",
     "ModelError",
+    "ModelHealthStatus",
     "ModelInterface",
     "ModelRequest",
     "ModelRequestError",
     "ModelResponse",
     "ModelUnavailableError",
     "Role",
+    "RoutingDecision",
+    "TaskType",
     "TokenUsage",
+    "TrustLevel",
+    "get_candidate_catalog",
     "get_model",
     "get_registry",
+    "get_task_router",
 ]
+
