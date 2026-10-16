@@ -27,9 +27,12 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from guardian.core.presence_server import broadcaster
+from guardian.security.kill_switch import get_kill_switch
 
 from guardian.logging.logger import get_logger
 from guardian.model.catalog import get_candidate_catalog
@@ -756,4 +759,315 @@ def approve_security_action(req: ActionApprovalApiRequest):
     """Human approval gate for Level 3 consequential actions."""
     gateway = get_permission_gateway()
     return gateway.approve_proposal(req.action_id, approver=req.approver)
+
+
+# ---------------------------------------------------------------------------
+# Layer A / B: Unified JARVIS Conversational Core & Presence WebSocket
+# ---------------------------------------------------------------------------
+
+class ConversationRequest(BaseModel):
+    query: str = Field(..., description="User query or transcribed utterance")
+    use_knowledge: bool = Field(True, description="Query local SQLite FTS5 + semantic memory")
+    use_web: bool = Field(True, description="Query live web via Tavily/Brave fallback")
+    use_academic: bool = Field(False, description="Query peer-reviewed literature via OpenAlex/Crossref")
+    max_sources: int = Field(4, ge=1, le=10)
+
+
+async def execute_unified_turn(
+    query: str,
+    use_knowledge: bool = True,
+    use_web: bool = True,
+    use_academic: bool = False,
+    max_sources: int = 4,
+) -> Dict[str, Any]:
+    """
+    Central JARVIS Cognitive Loop:
+    1. Check Emergency Kill Switch.
+    2. Broadcast 'thinking' status to frontend avatar.
+    3. Retrieve multi-source evidence (Knowledge, Web, Academic) with provenance.
+    4. Broadcast 'researching' status with gathered evidence citations.
+    5. Generate structured synthesis response.
+    6. Evaluate if high-impact action is staged -> trigger Level 3 Approval Gate if needed.
+    7. Synthesize speech chunks and broadcast 'speaking' events with audio + duration.
+    8. Broadcast 'idle' upon completion.
+    """
+    ks = get_kill_switch()
+    if ks.is_active():
+        await broadcaster.broadcast({
+            "schema": "guardian.v3",
+            "event": "error",
+            "error": "Emergency Kill Switch is currently ACTIVE. Operational core locked."
+        })
+        return {"error": "Emergency Kill Switch is ACTIVE."}
+
+    # 1. Broadcast thinking event
+    await broadcaster.broadcast({
+        "schema": "guardian.v3",
+        "event": "thinking",
+        "thought": f"Analyzing intent: '{query[:80]}...'",
+        "timestamp": time.time(),
+    })
+
+    t0 = time.monotonic()
+    sources_collected: List[Dict[str, Any]] = []
+    evidence_blocks: List[str] = []
+
+    # 2. Local Knowledge Retrieval
+    if use_knowledge:
+        try:
+            kb_results = await asyncio.to_thread(hybrid_search, query, DB_PATH, max_sources)
+            if kb_results:
+                kb_lines = []
+                for r in kb_results:
+                    src_tag = f"[Knowledge: {r['filename']}#chunk{r['chunk_index']}]"
+                    sources_collected.append({
+                        "type": "local_knowledge",
+                        "identifier": src_tag,
+                        "title": r["filename"],
+                        "snippet": r["content"][:240],
+                        "score": r.get("score"),
+                    })
+                    kb_lines.append(f"{src_tag}\n{r['content']}")
+                evidence_blocks.append("### Local Knowledge Excerpts:\n" + "\n\n".join(kb_lines))
+        except Exception as e:
+            log.warning(f"Local knowledge retrieval error: {e}")
+
+    # 3. Web Search Retrieval
+    if use_web:
+        try:
+            web_client = WebSearchClient()
+            web_results = await asyncio.to_thread(web_client.search, query, max_sources)
+            if web_results:
+                web_lines = []
+                for w in web_results:
+                    src_tag = f"[Web: {w.title} ({w.domain})]"
+                    sources_collected.append({
+                        "type": "web",
+                        "identifier": src_tag,
+                        "title": w.title,
+                        "url": w.url,
+                        "snippet": w.snippet[:240],
+                    })
+                    web_lines.append(f"{src_tag}\n{w.snippet}\nSource URL: {w.url}")
+                evidence_blocks.append("### Web Intelligence Excerpts:\n" + "\n\n".join(web_lines))
+        except Exception as e:
+            log.warning(f"Web retrieval error: {e}")
+
+    # 4. Academic Literature
+    if use_academic:
+        try:
+            acad_client = AcademicResearchClient()
+            papers = await asyncio.to_thread(acad_client.search_all, query, max_sources)
+            if papers:
+                paper_lines = []
+                for p in papers:
+                    src_tag = f"[Paper: {p.title[:40]}... ({p.year})]"
+                    sources_collected.append({
+                        "type": "academic_paper",
+                        "identifier": src_tag,
+                        "title": p.title,
+                        "url": p.doi_url or p.url,
+                        "snippet": (p.abstract or "")[:240],
+                    })
+                    paper_lines.append(f"{src_tag}\nTitle: {p.title}\nAbstract: {p.abstract or 'No abstract'}\nDOI: {p.doi}")
+                evidence_blocks.append("### Academic Literature Excerpts:\n" + "\n\n".join(paper_lines))
+        except Exception as e:
+            log.warning(f"Academic retrieval error: {e}")
+
+    # Broadcast research status
+    if sources_collected:
+        await broadcaster.broadcast({
+            "schema": "guardian.v3",
+            "event": "researching",
+            "detail": f"Gathered {len(sources_collected)} verified evidence records",
+            "sources": sources_collected,
+            "timestamp": time.time(),
+        })
+
+    # 5. Build prompt & generate response
+    context_str = "\n\n".join(evidence_blocks) if evidence_blocks else "No external evidence retrieved."
+    augmented_prompt = f"USER QUERY:\n{query}\n\nEVIDENCE RETRIEVED:\n{context_str}\n\nProvide a concise, direct, authoritative response under Guardian identity."
+
+    answer = await asyncio.to_thread(generate_llm_answer, augmented_prompt, UNIVERSAL_SYSTEM_PROMPT, 1500)
+
+    # 6. Consequential action check (Level 3 Gate)
+    staged_proposal = None
+    lower_q = query.lower()
+    if any(k in lower_q for k in ("firewall", "block port", "delete file", "execute command", "modify access")):
+        gateway = get_permission_gateway()
+        staged_proposal = gateway.evaluate_action(
+            action_type="firewall_change" if "firewall" in lower_q else "shell_execute",
+            target=query[:50],
+            description=f"Automated action staged from query: {query}",
+            payload={"query": query},
+        )
+        await broadcaster.broadcast({
+            "schema": "guardian.v3",
+            "event": "approval_required",
+            "proposal": staged_proposal.to_dict(),
+            "timestamp": time.time(),
+        })
+
+    # 7. Synthesize speech sentence-by-sentence and stream audio to avatar
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', answer) if s.strip()]
+    if not sentences:
+        sentences = [answer]
+
+    from guardian.voice import get_voice_layer
+    vl = get_voice_layer()
+
+    import base64
+    for sentence in sentences:
+        if ks.is_active():
+            break
+        try:
+            synth_res = await asyncio.to_thread(vl.synthesize, sentence)
+            audio_b64 = base64.b64encode(synth_res.audio_bytes).decode('utf-8') if synth_res.audio_bytes else ""
+            duration = synth_res.duration_s if synth_res.duration_s > 0 else max(1.5, len(sentence) * 0.06)
+        except Exception:
+            audio_b64 = ""
+            duration = max(1.5, len(sentence) * 0.06)
+
+        await broadcaster.broadcast({
+            "schema": "guardian.v3",
+            "event": "speaking",
+            "sentence": sentence,
+            "audio_b64": audio_b64,
+            "duration_s": duration,
+            "timestamp": time.time(),
+        })
+        # Wait for audio playback timeline (or small buffer)
+        await asyncio.sleep(min(duration * 0.9, 4.0))
+
+    await broadcaster.broadcast({
+        "schema": "guardian.v3",
+        "event": "idle",
+        "timestamp": time.time(),
+    })
+
+    return {
+        "query": query,
+        "answer": answer,
+        "sources": sources_collected,
+        "proposal": staged_proposal.to_dict() if staged_proposal else None,
+        "duration_ms": round((time.monotonic() - t0) * 1000, 2),
+    }
+
+
+@app.post("/conversation")
+async def conversation_endpoint(req: ConversationRequest):
+    """Unified JARVIS conversation endpoint with multi-source evidence and speech synthesis."""
+    return await execute_unified_turn(
+        query=req.query,
+        use_knowledge=req.use_knowledge,
+        use_web=req.use_web,
+        use_academic=req.use_academic,
+        max_sources=req.max_sources,
+    )
+
+
+@app.post("/security/kill-switch/trigger")
+def trigger_kill_switch_api():
+    """Emergency Stop: immediately lock operations."""
+    ks = get_kill_switch()
+    ks.activate("API Emergency Stop Triggered")
+    broadcaster.broadcast_sync({
+        "schema": "guardian.v3",
+        "event": "kill_switch_activated",
+        "reason": "Emergency Stop engaged.",
+        "timestamp": time.time(),
+    })
+    return {"status": "kill_switch_active", "detail": "Emergency Stop Engaged."}
+
+
+@app.post("/security/kill-switch/reset")
+def reset_kill_switch_api():
+    """Emergency Stop Reset: unlock operations."""
+    ks = get_kill_switch()
+    ks.deactivate()
+    broadcaster.broadcast_sync({
+        "schema": "guardian.v3",
+        "event": "kill_switch_reset",
+        "reason": "Emergency Stop cleared.",
+        "timestamp": time.time(),
+    })
+    return {"status": "kill_switch_reset", "detail": "Emergency Stop Cleared."}
+
+
+@app.websocket("/ws/presence")
+async def presence_websocket_endpoint(websocket: WebSocket):
+    """
+    Central JARVIS WebSocket Bridge:
+    Bi-directional communication between backend core and Three.js spatial avatar HUD.
+    """
+    await broadcaster.connect(websocket)
+    try:
+        # Send initial status
+        ks = get_kill_switch()
+        await websocket.send_text(json.dumps({
+            "schema": "guardian.v3",
+            "event": "connected",
+            "kill_switch": ks.is_active(),
+            "timestamp": time.time(),
+        }))
+
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+                msg_type = data.get("type") or data.get("event")
+
+                if msg_type == "user_message":
+                    text = data.get("text", "").strip()
+                    if text:
+                        asyncio.create_task(execute_unified_turn(
+                            query=text,
+                            use_knowledge=data.get("use_knowledge", True),
+                            use_web=data.get("use_web", True),
+                            use_academic=data.get("use_academic", False),
+                            max_sources=data.get("max_sources", 4),
+                        ))
+
+                elif msg_type == "action_approval":
+                    action_id = data.get("action_id")
+                    approved = data.get("approved", False)
+                    if action_id:
+                        gateway = get_permission_gateway()
+                        res = gateway.approve_proposal(action_id, approver="operator" if approved else "operator_denied")
+                        await broadcaster.broadcast({
+                            "schema": "guardian.v3",
+                            "event": "approval_result",
+                            "action_id": action_id,
+                            "approved": approved,
+                            "result": res,
+                            "timestamp": time.time(),
+                        })
+
+                elif msg_type == "emergency_stop":
+                    ks.activate("Triggered from Spatial HUD")
+                    await broadcaster.broadcast({
+                        "schema": "guardian.v3",
+                        "event": "kill_switch_activated",
+                        "timestamp": time.time(),
+                    })
+
+                elif msg_type == "emergency_reset":
+                    ks.deactivate()
+                    await broadcaster.broadcast({
+                        "schema": "guardian.v3",
+                        "event": "kill_switch_reset",
+                        "timestamp": time.time(),
+                    })
+
+                elif msg_type == "ping":
+                    await websocket.send_text(json.dumps({"event": "pong", "timestamp": time.time()}))
+
+            except json.JSONDecodeError:
+                pass
+            except Exception as e:
+                log.error(f"WebSocket client dispatch error: {e}")
+
+    except WebSocketDisconnect:
+        broadcaster.disconnect(websocket)
+
 
