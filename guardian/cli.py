@@ -1569,9 +1569,10 @@ def web_fetch_cmd(
         page = gw.fetch_page(url)
     console.print()
     if page.success:
+        from rich.markup import escape
         console.print(f"[bold green]Fetched Successfully ({page.status_code})[/bold green]: {page.title or url}")
         preview = page.text[:500] + ("..." if len(page.text) > 500 else "")
-        console.print(Panel(preview, title="[dim]Sanitized Content Preview[/dim]", border_style="dim"))
+        console.print(Panel(escape(preview), title="[dim]Sanitized Content Preview[/dim]", border_style="dim"))
     else:
         console.print(f"[bold red]Fetch Blocked/Failed:[/bold red] {page.error}")
     console.print()
