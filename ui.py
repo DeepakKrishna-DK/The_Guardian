@@ -21,9 +21,13 @@ import requests
 import streamlit as st
 
 from guardian.model.catalog import get_candidate_catalog
+from guardian.model.guardian_router import get_guardian_router
+from guardian.model.slots import SlotState, get_slot_registry
 from guardian.model.task_router import get_task_router
-from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1
+from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1, GUARDIAN_MASTER_SYSTEM_PROMPT_V2
 from guardian.security.advisory import RuleAction, generate_firewall_advisory
+from guardian.security.permissions import PermissionLevel, get_permission_gateway
+from guardian.web.gateway import get_digital_access_gateway
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +451,90 @@ with tab_models:
                 st.caption("Single specialist model sufficient for this task. No secondary invocation needed.")
 
     st.markdown("---")
-    st.subheader(f"📋 Candidate Model Registry ({len(all_candidates)} Proposed Models)")
+    # ─── TWENTY-SLOT MODEL FOUNDATION (Architecture 2.0) ──────────────────────
+    st.subheader("🧩 Twenty-Slot Model Foundation (Architecture 2.0 — Section 3)")
+    st.caption("Configurable registry of 20 model slots with on-demand lazy loading (max 2 parallel models in RAM/VRAM).")
+
+    slot_reg = get_slot_registry()
+    slot_dash = slot_reg.get_status_dashboard()
+
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    m_col1.metric("Total Model Slots", slot_dash["total_slots"])
+    m_col2.metric("Loaded in Memory", f"{slot_dash['loaded_count']} / {slot_dash['policy']['max_parallel_models']} max")
+    m_col3.metric("Verified Healthy", slot_dash["healthy_count"])
+    m_col4.metric("Unverified Candidates", slot_dash["unverified_count"])
+
+    btn_v_all, btn_refresh = st.columns([2, 1])
+    with btn_v_all:
+        if st.button("⚡ Verify All 20 Model Slots (Smoke Check & Licensing)", use_container_width=True):
+            slot_reg.verify_all_slots()
+            st.success("All 20 candidate slots verified according to Section 3 specifications.")
+            st.rerun()
+
+    # 20-Slot interactive table
+    for s_num in range(1, 21):
+        slot = slot_reg.get_slot(s_num)
+        if not slot:
+            continue
+        
+        # State badge formatting
+        state_str = slot.state.value.upper()
+        if slot.is_loaded:
+            badge = "🔵 LOADED (ACTIVE RAM)"
+        elif slot.state == SlotState.HEALTHY:
+            badge = "🟢 HEALTHY (READY)"
+        elif slot.state == SlotState.FAILED:
+            badge = "🔴 FAILED"
+        else:
+            badge = "⚪ UNVERIFIED"
+
+        with st.expander(f"Slot {slot.slot_number:02d}: `{slot.id}` — {badge} | {slot.task}"):
+            col_l, col_r = st.columns([3, 2])
+            with col_l:
+                st.markdown(f"**Repository:** `{slot.repo}`")
+                st.markdown(f"**Task Role:** `{slot.task}` | **Adapter:** `{slot.adapter_name}`")
+                st.markdown(f"**Estimated Memory:** `{slot.estimated_ram_gb:.1f} GB RAM` / `{slot.estimated_vram_gb:.1f} GB VRAM`")
+                if slot.validation_notes:
+                    st.caption("**Validation Notes:** " + " • ".join(slot.validation_notes))
+            with col_r:
+                btn_c1, btn_c2 = st.columns(2)
+                with btn_c1:
+                    if st.button(f"Verify #{slot.slot_number}", key=f"v_{slot.slot_number}"):
+                        res = slot_reg.verify_slot(slot.slot_number)
+                        st.info(f"Verification: {res['state']}")
+                        st.rerun()
+                with btn_c2:
+                    if slot.is_loaded:
+                        if st.button(f"Unload #{slot.slot_number}", key=f"u_{slot.slot_number}"):
+                            slot_reg.unload_slot(slot.slot_number)
+                            st.rerun()
+                    else:
+                        if st.button(f"Load #{slot.slot_number}", key=f"l_{slot.slot_number}"):
+                            l_res = slot_reg.load_slot(slot.slot_number)
+                            if l_res.get("evicted_slot"):
+                                st.warning(f"LRU: Evicted Slot {l_res['evicted_slot']} to maintain {slot_reg.policy.max_parallel_models} max models.")
+                            st.rerun()
+
+    # Model Task Execution Sandbox
+    st.markdown("---")
+    st.subheader("🧪 Slot Adapter Direct Execution Sandbox")
+    exec_c1, exec_c2 = st.columns([1, 3])
+    with exec_c1:
+        chosen_slot_num = st.selectbox("Target Slot", list(range(1, 21)), index=0, format_func=lambda n: f"Slot {n:02d} ({slot_reg.get_slot(n).id if slot_reg.get_slot(n) else n})")
+    with exec_c2:
+        test_prompt = st.text_input("Test Prompt / Task Input", value="Analyze system telemetry and evaluate potential anomalies.")
+
+    if st.button("▶️ Execute Task via Slot Adapter", use_container_width=True):
+        res = slot_reg.run_task(chosen_slot_num, {"prompt": test_prompt, "query": test_prompt})
+        st.markdown(f"**Status:** `{res.status.upper()}` | **Slot ID:** `{res.slot_id}`")
+        if res.error:
+            st.error(f"Error: {res.error}")
+        else:
+            st.json(res.output)
+            st.caption(f"Metadata: {res.metadata}")
+
+    st.markdown("---")
+    st.subheader(f"📋 Candidate Model Specification Catalog ({len(all_candidates)} Proposed Models)")
     st.caption("Section 3 Rule: Treat every model ID as a CANDIDATE. Verify capabilities, hardware, and safety sandbox before activation.")
 
     # Filter row
@@ -505,45 +592,71 @@ with tab_security:
         unsafe_allow_html=True,
     )
 
-    st.info(
-        "🛡️ **Defensive Boundary (Section 8):** Default mode is **ADVISORY and READ-ONLY**. "
-        "Direct changes to firewalls, endpoint protections, or network routing require explicit human confirmation.",
-        icon="ℹ️",
-    )
+    # ─── PERMISSION & OPERATIONAL SAFETY GATEWAY (Section 9) ─────────────────
+    st.markdown("---")
+    st.subheader("🛡️ Permission & Operational Safety Gateway (Section 9)")
+    st.caption("Strict separation of operational authority across three permission tiers.")
 
-    st.subheader("📝 Draft Defensive Firewall Recommendation")
-    with st.form("firewall_advisory_form"):
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            fw_evidence = st.text_input(
-                "Observed Evidence",
-                value="Repeated brute force SSH auth failures (>50/min) from IP 198.51.100.42",
-            )
-            fw_scope = st.text_input("Source & Destination Scope", value="SRC: 198.51.100.42 ➔ DST: 10.0.1.5 (Production Gateway)")
-            fw_ports = st.text_input("Protocol & Ports", value="TCP / 22 (SSH)")
-            fw_action = st.selectbox("Action", ["DROP", "REJECT", "RATE_LIMIT", "ISOLATE", "LOG_ONLY"])
-            fw_outcome = st.text_input("Intended Security Outcome", value="Mitigate automated credential brute-forcing against gateway SSH.")
-        with col_f2:
-            fw_impact = st.text_input("Expected Operational Impact", value="Zero impact on legitimate users; source is an external untrusted IP.")
-            fw_fp = st.text_input("Potential False Positives", value="Remote engineer travelling in subnet 198.51.100.0/24.")
-            fw_rollback = st.text_input("Rollback Plan", value="iptables -D INPUT -s 198.51.100.42 -p tcp --dport 22 -j DROP")
-            fw_verify = st.text_input("Verification Procedure", value="tcpdump -i eth0 host 198.51.100.42 and verify packet drop counter.")
+    perm_gw = get_permission_gateway()
+    sec_status = perm_gw.get_security_status()
 
-        submitted = st.form_submit_button("Generate Evidence-Grounded Security Advisory", use_container_width=True)
+    p_col1, p_col2, p_col3 = st.columns(3)
+    with p_col1:
+        st.info("**LEVEL 1 — READ**\n\nSearch, retrieve, inspect, summarize permitted resources without state modifications.")
+    with p_col2:
+        st.warning("**LEVEL 2 — PREPARE**\n\nDraft files, stage code changes, recommend security rules without committing changes.")
+    with p_col3:
+        st.error("**LEVEL 3 — EXECUTE**\n\nCommit changes, alter firewalls, delete files. Strictly requires explicit human authorization.")
 
-    if submitted:
-        advisory = generate_firewall_advisory(
-            evidence=fw_evidence,
-            src_dest=fw_scope,
-            ports=fw_ports,
-            outcome=fw_outcome,
-            impact=fw_impact,
-            false_positives=fw_fp,
-            rollback=fw_rollback,
-            verification=fw_verify,
-            action=RuleAction(fw_action),
-        )
-        st.markdown(advisory.format_markdown())
+    # Kill Switch Banner & Action Approval Queue
+    st.markdown("#### 🚨 Safety Posture & Emergency Controls")
+    k_col1, k_col2 = st.columns([2, 1])
+    with k_col1:
+        if sec_status["kill_switch_active"]:
+            st.error("🔴 **EMERGENCY KILL SWITCH IS ACTIVE**: All operational actions and model executions are halted.")
+        else:
+            st.success("🟢 **Operational Status: Normal**: Security guardrails and permission gates active.")
+    with k_col2:
+        if sec_status["kill_switch_active"]:
+            if st.button("Disarm Kill Switch", use_container_width=True):
+                perm_gw.kill_switch.deactivate()
+                st.rerun()
+        else:
+            if st.button("🛑 ACTIVATE EMERGENCY STOP", use_container_width=True):
+                perm_gw.kill_switch.activate("User triggered emergency stop from UI")
+                st.rerun()
+
+    # Action Approval Queue
+    st.markdown("#### 📋 Consequential Action Approval Queue (Level 3)")
+    pending = sec_status["pending_proposals"]
+    if pending:
+        for p in pending:
+            with st.container():
+                st.write(f"**Action:** `{p['action_type']}` | **Target:** `{p['target']}` | **ID:** `{p['action_id']}`")
+                st.caption(f"Description: {p['description']}")
+                b1, b2 = st.columns(2)
+                with b1:
+                    if st.button(f"✅ Authorize & Commit #{p['action_id']}", key=f"app_{p['action_id']}"):
+                        perm_gw.approve_proposal(p['action_id'], approver="human_ui_admin")
+                        perm_gw.execute_proposal(p['action_id'])
+                        st.success(f"Action {p['action_id']} executed.")
+                        st.rerun()
+                with b2:
+                    if st.button(f"❌ Reject #{p['action_id']}", key=f"rej_{p['action_id']}"):
+                        perm_gw.reject_proposal(p['action_id'])
+                        st.info(f"Action {p['action_id']} rejected.")
+                        st.rerun()
+    else:
+        st.caption("No pending consequential actions requiring human authorization.")
+
+    # Live Audit Log Viewer
+    st.markdown("---")
+    st.subheader("📜 Operational Audit Log (`data/audit/guardian.jsonl`)")
+    audit_events = perm_gw.audit_logger.read_recent_events(limit=15)
+    if audit_events:
+        st.dataframe(audit_events, use_container_width=True)
+    else:
+        st.caption("Audit log is currently empty.")
 
 
 # ---------------------------------------------------------------------------

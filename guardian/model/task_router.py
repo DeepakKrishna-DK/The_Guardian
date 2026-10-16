@@ -56,14 +56,29 @@ class RoutingDecision:
     relevant_evidence: List[str] = field(default_factory=list)
     fallbacks_or_limitations: List[str] = field(default_factory=list)
 
+    @property
+    def primary_model(self) -> str:
+        return self.selected_model_or_tool
+
+    @property
+    def rationale(self) -> str:
+        return self.selection_reason
+
+    @property
+    def support_models(self) -> List[str]:
+        return [c["model"] for c in self.collaborators if "model" in c]
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "task_type": self.task_type.value,
             "input_modalities": self.input_modalities,
             "output_modalities": self.output_modalities,
             "selected_model_or_tool": self.selected_model_or_tool,
+            "primary_model": self.selected_model_or_tool,
             "selection_reason": self.selection_reason,
+            "rationale": self.selection_reason,
             "collaborators": self.collaborators,
+            "support_models": self.support_models,
             "requires_external_evidence": self.requires_external_evidence,
             "requires_local_retrieval": self.requires_local_retrieval,
             "execution_succeeded": self.execution_succeeded,
@@ -120,7 +135,7 @@ class IntelligentTaskRouter:
             return TaskType.OCR_DOCUMENT_EXTRACTION
 
         # Domain classification
-        if any(k in text for k in ("firewall", "cve-", "exploit", "soc alert", "malware", "securebert", "siem", "phishing", "nmap", "vulnerability scan")):
+        if any(k in text for k in ("firewall", "cve", "exploit", "soc alert", "malware", "securebert", "siem", "phishing", "nmap", "vulnerability", "security alert", "threat")):
             return TaskType.SECURITY_ALERT_ANALYSIS
 
         if any(k in text for k in ("pubmed", "clinical", "biomedical", "genetics", "pathology", "biomistral", "pharmacology", "dosage")):

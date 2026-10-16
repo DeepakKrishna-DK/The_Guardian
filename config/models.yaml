@@ -1,0 +1,148 @@
+version: 1
+policy:
+  require_verified_model: true
+  allow_unreviewed_remote_code: false
+  load_on_demand: true
+  max_parallel_models: 2
+  allow_automatic_privileged_actions: false
+
+models:
+  - slot: 1
+    id: gemma4_26b_a4b
+    repo: google/gemma-4-26B-A4B
+    task: multimodal_chat
+    adapter: transformers_vlm
+    enabled: false
+
+  - slot: 2
+    id: qwen_image_2_1_turbo
+    repo: Qwen/Qwen-Image-2.1-Turbo
+    task: image_generation
+    adapter: diffusers
+    enabled: false
+
+  - slot: 3
+    id: gpt_oss_120b
+    repo: openai/gpt-oss-120b
+    task: reasoning_chat
+    adapter: transformers_chat
+    enabled: false
+
+  - slot: 4
+    id: deepseek_v4_pro
+    repo: deepseek-ai/DeepSeek-V4-Pro
+    task: reasoning_chat
+    adapter: transformers_chat
+    enabled: false
+
+  - slot: 5
+    id: nemotron_lightning
+    repo: nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16
+    task: reasoning_chat
+    adapter: transformers_chat
+    enabled: false
+
+  - slot: 6
+    id: nemotron_super_vl
+    repo: nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4
+    task: visual_chat
+    adapter: transformers_vlm
+    enabled: false
+
+  - slot: 7
+    id: cosmos3_super
+    repo: nvidia/Cosmos3-Super
+    task: media_specialist
+    adapter: diffusers
+    enabled: false
+
+  - slot: 8
+    id: nemotron_sports_tennis
+    repo: nvidia/NemotronLabs-AI-for-Media-Sports-Tennis
+    task: sports_media_analysis
+    adapter: transformers_specialist
+    enabled: false
+
+  - slot: 9
+    id: fara_1_5
+    repo: microsoft/Fara1.5-27B
+    task: visual_agent
+    adapter: transformers_vlm
+    enabled: false
+
+  - slot: 10
+    id: biomistral
+    repo: BioMistral/BioMistral-7B
+    task: biomedical_text
+    adapter: transformers_chat
+    enabled: false
+
+  - slot: 11
+    id: whisper_large_v3
+    repo: openai/whisper-large-v3
+    task: speech_to_text
+    adapter: transformers_asr
+    enabled: false
+
+  - slot: 12
+    id: kokoro_tts
+    repo: hexgrad/Kokoro-82M
+    task: text_to_speech
+    adapter: kokoro_tts
+    enabled: false
+
+  - slot: 13
+    id: paddleocr_vl
+    repo: PaddleOCR-VL
+    task: document_ocr
+    adapter: paddleocr
+    enabled: false
+
+  - slot: 14
+    id: qwen3_embedding
+    repo: Qwen/Qwen3-Embedding-0.6B
+    task: embeddings
+    adapter: sentence_transformer_or_native
+    enabled: false
+
+  - slot: 15
+    id: qwen_general_vlm
+    repo: Qwen/Qwen3.8-27B
+    task: multimodal_chat
+    adapter: transformers_vlm
+    enabled: false
+
+  - slot: 16
+    id: bge_reranker
+    repo: BAAI/bge-reranker-v2-m3
+    task: reranking
+    adapter: cross_encoder
+    enabled: false
+
+  - slot: 17
+    id: glm_5_2
+    repo: zai-org/GLM-5.2
+    task: reasoning_coding
+    adapter: transformers_chat
+    enabled: false
+
+  - slot: 18
+    id: deepseek_r1
+    repo: deepseek-ai/DeepSeek-R1
+    task: reasoning_chat
+    adapter: transformers_chat
+    enabled: false
+
+  - slot: 19
+    id: gemma4_31b
+    repo: google/gemma-4-31B-it
+    task: multimodal_chat
+    adapter: transformers_vlm
+    enabled: false
+
+  - slot: 20
+    id: securebert2
+    repo: cisco-ai/SecureBERT2.0-base
+    task: cybersecurity_text
+    adapter: transformers_masked_lm
+    enabled: false

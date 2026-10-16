@@ -23,7 +23,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import httpx
 from dotenv import load_dotenv
@@ -34,7 +34,14 @@ from pydantic import BaseModel, Field
 from guardian.logging.logger import get_logger
 from guardian.model.catalog import get_candidate_catalog
 from guardian.model.task_router import get_task_router
-from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1, UIRA_MASTER_SYSTEM_PROMPT_V1
+from guardian.model.slots import get_slot_registry
+from guardian.model.guardian_router import get_guardian_router
+from guardian.prompts import (
+    GUARDIAN_MASTER_SYSTEM_PROMPT_V1,
+    GUARDIAN_MASTER_SYSTEM_PROMPT_V2,
+    GUARDIAN_MASTER_PROMPT,
+    UIRA_MASTER_SYSTEM_PROMPT_V1,
+)
 from guardian.research.academic import AcademicResearchClient
 from guardian.security.advisory import (
     DefensiveFirewallRecommendation,
@@ -42,6 +49,8 @@ from guardian.security.advisory import (
     SeverityLevel,
     generate_firewall_advisory,
 )
+from guardian.security.permissions import get_permission_gateway, PermissionLevel
+from guardian.web.gateway import get_digital_access_gateway
 from guardian.web.search import WebSearchClient
 from guardian.web.security import sanitize_web_content
 from semantic_search import EMBEDDING_MODEL, hybrid_search, init_embeddings_table
@@ -608,12 +617,143 @@ def create_firewall_advisory(req: FirewallAdvisoryRequest):
 
 
 @app.get("/system/prompt")
-def get_system_prompt():
-    """Return the active Guardian Master System Prompt Version 1.0."""
+def get_system_prompt(v: str = "1.0"):
+    """Return the active Guardian Master System Prompt (Version 2.0 or 1.0)."""
+    if v == "2.0":
+        return {
+            "version": "2.0",
+            "title": "GUARDIAN — UNIVERSAL INTELLIGENCE MASTER SYSTEM PROMPT: Digital Access, Multi-Model, Research, Defensive Security",
+            "sections": 20,
+            "prompt": GUARDIAN_MASTER_SYSTEM_PROMPT_V2,
+        }
     return {
         "version": "1.0",
         "title": "GUARDIAN AI — MASTER SYSTEM PROMPT: Universal Intelligence & Responsible AI",
         "sections": 18,
         "prompt": GUARDIAN_MASTER_SYSTEM_PROMPT_V1,
     }
+
+
+# ─── Universal Digital Intelligence Endpoints (Architecture 2.0) ──────────────
+
+class SlotVerifyRequest(BaseModel):
+    slot_number: Optional[int] = None
+
+
+class SlotLoadRequest(BaseModel):
+    slot_number: int
+
+
+class SlotRunRequest(BaseModel):
+    slot_number: int
+    task: Dict[str, Any]
+
+
+class WebSearchApiRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+
+class WebFetchApiRequest(BaseModel):
+    url: str
+
+
+class AcademicSearchApiRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+class ActionProposalApiRequest(BaseModel):
+    action_type: str
+    target: str = ""
+    description: str = ""
+    payload: Dict[str, Any] = {}
+
+
+class ActionApprovalApiRequest(BaseModel):
+    action_id: str
+    approver: str = "human_operator"
+
+
+@app.get("/models/slots")
+def get_model_slots_dashboard():
+    """Layer 1: Twenty-Slot Model Foundation status dashboard (Section 3)."""
+    registry = get_slot_registry()
+    return registry.get_status_dashboard()
+
+
+@app.post("/models/slots/verify")
+def verify_model_slot(req: SlotVerifyRequest):
+    """Verify repository existence, hardware feasibility, and adapter health."""
+    registry = get_slot_registry()
+    if req.slot_number is not None:
+        result = registry.verify_slot(req.slot_number)
+        return {"result": result}
+    return {"results": registry.verify_all_slots()}
+
+
+@app.post("/models/slots/load")
+def load_model_slot(req: SlotLoadRequest):
+    """Load model slot into memory on demand with LRU eviction (max 2 parallel)."""
+    registry = get_slot_registry()
+    return registry.load_slot(req.slot_number)
+
+
+@app.post("/models/slots/run")
+def run_model_slot_task(req: SlotRunRequest):
+    """Run a task on a specific model slot adapter."""
+    registry = get_slot_registry()
+    result = registry.run_task(req.slot_number, req.task)
+    return result.to_dict()
+
+
+@app.post("/web/search")
+def web_search_endpoint(req: WebSearchApiRequest):
+    """Layer 3: Search the public web with SSRF validation."""
+    gateway = get_digital_access_gateway()
+    results = gateway.search_web(req.query, max_results=req.max_results)
+    return {"query": req.query, "count": len(results), "results": [r.__dict__ for r in results]}
+
+
+@app.post("/web/fetch")
+def web_fetch_endpoint(req: WebFetchApiRequest):
+    """Layer 3: Safe web page retrieval with SSRF defense and untrusted content wrapping."""
+    gateway = get_digital_access_gateway()
+    page = gateway.fetch_page(req.url)
+    return page.__dict__
+
+
+@app.post("/academic/search")
+def academic_search_endpoint(req: AcademicSearchApiRequest):
+    """Layer 3: Scholarly research retrieval via OpenAlex and Crossref."""
+    gateway = get_digital_access_gateway()
+    papers = gateway.search_academic(req.query, max_results=req.limit)
+    return {"query": req.query, "count": len(papers), "papers": [p.__dict__ for p in papers]}
+
+
+@app.get("/security/permissions")
+def get_security_permissions():
+    """Layer 4: Operational permission levels, approval queue, and kill switch status."""
+    gateway = get_permission_gateway()
+    return gateway.get_security_status()
+
+
+@app.post("/security/propose")
+def propose_security_action(req: ActionProposalApiRequest):
+    """Stage an action proposal and evaluate required permission level (Level 1/2/3)."""
+    gateway = get_permission_gateway()
+    proposal = gateway.evaluate_action(
+        action_type=req.action_type,
+        target=req.target,
+        description=req.description,
+        payload=req.payload,
+    )
+    return proposal.to_dict()
+
+
+@app.post("/security/approve")
+def approve_security_action(req: ActionApprovalApiRequest):
+    """Human approval gate for Level 3 consequential actions."""
+    gateway = get_permission_gateway()
+    return gateway.approve_proposal(req.action_id, approver=req.approver)
 

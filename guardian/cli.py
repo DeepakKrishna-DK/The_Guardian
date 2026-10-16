@@ -78,6 +78,27 @@ knowledge_app = typer.Typer(
 )
 app.add_typer(knowledge_app, name="knowledge")
 
+models_app = typer.Typer(
+    name="models",
+    help="Twenty-Slot Model Foundation (Architecture 2.0) and Task Router",
+    no_args_is_help=True,
+)
+app.add_typer(models_app, name="models")
+
+web_app = typer.Typer(
+    name="web",
+    help="Digital Access Layer: safe web discovery, page retrieval, and research",
+    no_args_is_help=True,
+)
+app.add_typer(web_app, name="web")
+
+permissions_app = typer.Typer(
+    name="permissions",
+    help="Permission & Operational Safety Layer: Level 1/2/3 gates and audit logs",
+    no_args_is_help=True,
+)
+app.add_typer(permissions_app, name="permissions")
+
 mcp_app = typer.Typer(
     name="mcp",
     help="Model Context Protocol server for external clients",
@@ -335,12 +356,17 @@ def chat(
     from guardian.core.session import Session
     from guardian.memory import get_memory_manager
     from guardian.model.registry import get_model
-    from guardian.prompts import GUARDIAN_SYSTEM_PROMPT
+    from guardian.prompts import GUARDIAN_SYSTEM_PROMPT, GUARDIAN_MASTER_SYSTEM_PROMPT_V1
+    from guardian.model.task_router import get_task_router
+    from guardian.security.advisory import generate_firewall_advisory
     from guardian.skills import get_skill_router
     from guardian.skills import GUARDIAN_SKILL
     from guardian.tools import get_tool_executor
     from guardian.tools.loop import ToolLoop
     from guardian.tools.tool_call import TOOL_USE_SYSTEM_ADDITION
+
+    # --- Task Router (Section 5 multi-model orchestration) ---
+    _task_router = get_task_router()
 
     # --- Select backend ---
     try:
@@ -357,12 +383,13 @@ def chat(
     if not no_memory:
         try:
             mm = get_memory_manager()
-            system_prompt = mm.build_system_prompt(GUARDIAN_SYSTEM_PROMPT)
+            # Use Master System Prompt V1.0 (Section 1-18) as the active system prompt
+            system_prompt = mm.build_system_prompt(GUARDIAN_MASTER_SYSTEM_PROMPT_V1)
         except Exception as exc:
             console.print(f"[yellow]Warning:[/yellow] Memory unavailable: {exc}")
-            system_prompt = GUARDIAN_SYSTEM_PROMPT
+            system_prompt = GUARDIAN_MASTER_SYSTEM_PROMPT_V1
     else:
-        system_prompt = GUARDIAN_SYSTEM_PROMPT
+        system_prompt = GUARDIAN_MASTER_SYSTEM_PROMPT_V1
 
     if agentic:
         system_prompt = system_prompt + "\n\n" + TOOL_USE_SYSTEM_ADDITION
@@ -397,11 +424,11 @@ def chat(
     console.print()
     console.print(Panel(
         Text.from_markup(
-            f"[bold cyan]AI GUARDIAN[/bold cyan]  v{__version__}\n"
+            f"[bold cyan]AI GUARDIAN[/bold cyan]  v{__version__}  [dim]Master Prompt v1.0 ✓[/dim]\n"
             f"[dim]Model: {info.provider} / {info.model}[/dim]\n"
             f"{mem_status}  {agt_status}\n"
             f"[dim]Skills: auto-routed (scholar/builder/critic/tester)[/dim]\n"
-            f"[dim]/exit  /clear  /status  /model  /remember key=value  /skill[/dim]"
+            f"[dim]/exit  /clear  /status  /model  /skill  /route  /advisory[/dim]"
         ),
         box=box.DOUBLE, expand=False,
     ))
@@ -534,8 +561,62 @@ def chat(
                 console.print("[dim]Cancelled.[/dim]")
             continue
 
+        if user_input.lower().startswith("/route "):
+            # Section 5: Intelligent Task Routing — classify and select minimal model/tool set
+            query_text = user_input[7:].strip()
+            if not query_text:
+                console.print("[dim]Usage: /route <query>[/dim]")
+            else:
+                try:
+                    _rd = _task_router.route_request(query=query_text)
+                    t = Table(title="[bold]Intelligent Task Router — Section 5[/bold]", box=box.SIMPLE)
+                    t.add_column("Field", style="cyan")
+                    t.add_column("Value")
+                    d = _rd.to_dict()
+                    t.add_row("Task Type", str(d.get("task_type", "")))
+                    t.add_row("Selected Model / Tool", str(d.get("selected_model_or_tool", "")))
+                    t.add_row("Selection Reason", str(d.get("selection_reason", "")))
+                    t.add_row("Input Modalities", ", ".join(d.get("input_modalities", [])))
+                    t.add_row("Output Modalities", ", ".join(d.get("output_modalities", [])))
+                    collabs = [f"{c.get('role', '')}: {c.get('model', '')}" for c in d.get("collaborators", [])]
+                    t.add_row("Collaborators (Sec 6)", ", ".join(collabs) or "None (single model sufficient)")
+                    t.add_row("External Evidence", str(d.get("requires_external_evidence", False)))
+                    t.add_row("Local Retrieval", str(d.get("requires_local_retrieval", False)))
+                    console.print(t)
+                    console.print(Panel(_rd.format_routing_report(), title="[dim]Routing Report (Section 17)[/dim]",
+                        border_style="dim", expand=False))
+                except Exception as exc:
+                    console.print(f"[red]Route error:[/red] {exc}")
+            continue
+
+        if user_input.lower() == "/advisory":
+            # Section 8: Defensive Security Advisory — interactive 8-point firewall advisory
+            console.print("[bold cyan]Defensive Firewall Advisory — Section 8[/bold cyan]")
+            console.print("[dim]Complete the 8-point schema (press Enter to skip optional fields):[/dim]\n")
+            try:
+                _ev  = console.input("[cyan]Evidence / trigger[/cyan]: ").strip() or "Suspicious traffic detected"
+                _sd  = console.input("[cyan]Source -> Destination[/cyan]: ").strip() or "unknown -> internal"
+                _pp  = console.input("[cyan]Protocol / Ports[/cyan]: ").strip() or "TCP/any"
+                _out = console.input("[cyan]Intended outcome[/cyan]: ").strip() or "Block suspicious traffic"
+                _imp = console.input("[cyan]Expected impact[/cyan]: ").strip() or "Prevent unauthorised access"
+                _fp  = console.input("[cyan]Potential false positives[/cyan]: ").strip() or "None identified"
+                _rb  = console.input("[cyan]Rollback plan[/cyan]: ").strip() or "Remove rule and restore default"
+                _vp  = console.input("[cyan]Verification procedure[/cyan]: ").strip() or "Monitor logs for 24h"
+                adv = generate_firewall_advisory(
+                    evidence=_ev, src_dest=_sd, ports=_pp,
+                    outcome=_out, impact=_imp, false_positives=_fp,
+                    rollback=_rb, verification=_vp,
+                )
+                console.print(Panel(adv.format_markdown(), title="[dim]Advisory Report (Section 8)[/dim]",
+                    border_style="cyan", expand=False))
+            except (EOFError, KeyboardInterrupt):
+                console.print("[dim]Advisory cancelled.[/dim]")
+            except Exception as exc:
+                console.print(f"[red]Advisory error:[/red] {exc}")
+            continue
+
         if user_input.lower().startswith("/"):
-            console.print("[dim]Commands: /exit /clear /status /model /remember key=value /skill [name] /read <path> /ls [path] /search <term> /run <cmd>[/dim]")
+            console.print("[dim]Commands: /exit /clear /status /model /remember key=value /skill [name] /route <query> /advisory /read <path> /ls [path] /search <term> /run <cmd>[/dim]")
             continue
 
 
@@ -1270,7 +1351,255 @@ def guardrails_status() -> None:
     console.print()
 
 
-# ??? Voice commands ??????????????????????????????????????????????????????????
+# ─── Models catalog & intelligent routing (Sections 3, 4, 5) ─────────────────
+
+@models_app.command("catalog")
+def models_catalog(
+    modality: str = typer.Option("", "--modality", "-m", help="Filter by modality: text, vision, audio, code, multimodal"),
+    tag: str = typer.Option("", "--tag", "-t", help="Filter by capability tag"),
+    deployment: str = typer.Option("", "--deployment", "-d", help="Filter by deployment: api, local, both"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full model metadata"),
+) -> None:
+    """List all 20 candidate models from the Section 4 Model Catalog."""
+    from guardian.model.catalog import get_candidate_catalog
+    catalog = get_candidate_catalog()
+    entries = catalog.filter(
+        modality=modality or None,
+        tag=tag or None,
+        deployment=deployment or None,
+    )
+    t = Table(
+        title=f"[bold]Guardian Model Catalog — Section 4[/bold] ({len(entries)} models)",
+        box=box.SIMPLE,
+    )
+    t.add_column("#", style="dim", width=3)
+    t.add_column("Model ID", style="cyan")
+    t.add_column("Provider")
+    t.add_column("Modality")
+    t.add_column("Deploy")
+    t.add_column("OK?")
+    if verbose:
+        t.add_column("Tags")
+    for i, e in enumerate(entries, 1):
+        d = e.to_dict()
+        elig = catalog.verify_candidate_eligibility(e.model_id)
+        ok = "[green]YES[/green]" if elig["eligible"] else "[red]NO[/red]"
+        row = [str(i), d.get("model_id", ""), d.get("provider", ""),
+               d.get("modality", ""), d.get("deployment", ""), ok]
+        if verbose:
+            row.append(", ".join(d.get("tags", [])))
+        t.add_row(*row)
+    console.print()
+    console.print(t)
+    console.print(f"\n[dim]Guardian Master System Prompt v1.0 — Section 4: Initial Model Catalog[/dim]\n")
+
+
+@models_app.command("route")
+def models_route(
+    query: str = typer.Argument(..., help="Task query to classify and route"),
+    has_images: bool = typer.Option(False, "--images", help="Query includes image input"),
+    has_audio: bool = typer.Option(False, "--audio", help="Query includes audio input"),
+    has_pdf: bool = typer.Option(False, "--pdf", help="Query includes PDF input"),
+    require_local: bool = typer.Option(False, "--local", help="Force local-only model selection"),
+) -> None:
+    """Classify a query and select the minimal suitable model/tool set — Section 5."""
+    from guardian.model.task_router import get_task_router
+    router = get_task_router()
+    decision = router.route_request(
+        query=query,
+        has_images=has_images,
+        has_audio=has_audio,
+        has_pdf=has_pdf,
+        require_local=require_local,
+    )
+    d = decision.to_dict()
+    console.print()
+    t = Table(title="[bold]Intelligent Task Router — Section 5[/bold]", box=box.SIMPLE, show_header=False)
+    t.add_column("Field", style="cyan", width=24)
+    t.add_column("Value")
+    t.add_row("Task Type", str(d.get("task_type", "")))
+    t.add_row("Selected Model / Tool", str(d.get("selected_model_or_tool", "")))
+    t.add_row("Selection Reason", str(d.get("selection_reason", "")))
+    t.add_row("Input Modalities", ", ".join(d.get("input_modalities", [])))
+    t.add_row("Output Modalities", ", ".join(d.get("output_modalities", [])))
+    collabs = [f"{c.get('role', '')}: {c.get('model', '')}" for c in d.get("collaborators", [])]
+    t.add_row("Collaborators (Sec 6)", ", ".join(collabs) or "None (single model sufficient)")
+    t.add_row("External Evidence", str(d.get("requires_external_evidence", False)))
+    t.add_row("Local Retrieval", str(d.get("requires_local_retrieval", False)))
+    console.print(t)
+    console.print()
+    console.print(Panel(decision.format_routing_report(), title="[dim]Routing Report (Section 17)[/dim]",
+        border_style="dim", expand=False))
+    console.print()
+
+
+@models_app.command("slots")
+def models_slots() -> None:
+    """Layer 1: List the Twenty-Slot Model Foundation matrix (Architecture 2.0)."""
+    from guardian.model.slots import get_slot_registry
+    registry = get_slot_registry()
+    dash = registry.get_status_dashboard()
+
+    t = Table(title=f"[bold]Twenty-Slot Model Foundation[/bold] (Active: {dash['loaded_count']}/{dash['policy']['max_parallel_models']} max parallel)", box=box.SIMPLE)
+    t.add_column("Slot", style="dim", width=4)
+    t.add_column("ID", style="cyan")
+    t.add_column("Repo")
+    t.add_column("Task")
+    t.add_column("Adapter")
+    t.add_column("RAM/VRAM", style="dim")
+    t.add_column("State")
+    t.add_column("Loaded?")
+
+    for s in dash["slots"]:
+        state_style = "green" if s["state"] == "healthy" else ("blue" if s["state"] == "loaded" else ("red" if s["state"] == "failed" else "dim"))
+        loaded_str = "[bold green]YES (RAM)[/bold green]" if s["is_loaded"] else "[dim]NO[/dim]"
+        mem_str = f"{s['estimated_ram_gb']:.0f}G/{s['estimated_vram_gb']:.0f}G"
+        t.add_row(
+            f"{s['slot_number']:02d}",
+            s["id"],
+            s["repo"],
+            s["task"],
+            s["adapter_name"],
+            mem_str,
+            f"[{state_style}]{s['state'].upper()}[/{state_style}]",
+            loaded_str,
+        )
+    console.print()
+    console.print(t)
+    console.print(f"[dim]Policy: load_on_demand=true, max_parallel_models={dash['policy']['max_parallel_models']}[/dim]\n")
+
+
+@models_app.command("verify")
+def models_verify(
+    slot: Optional[int] = typer.Argument(None, help="Slot number (1-20) to verify, or omit to verify all"),
+) -> None:
+    """Verify repository existence, hardware requirements, and adapter health."""
+    from guardian.model.slots import get_slot_registry
+    registry = get_slot_registry()
+    console.print()
+    if slot is not None:
+        res = registry.verify_slot(slot)
+        st_color = "green" if res["verified"] else "red"
+        console.print(f"Slot {slot:02d} (`{res['id']}`): [{st_color}]{res['state'].upper()}[/{st_color}]")
+        for n in res.get("notes", []):
+            console.print(f"  • {n}")
+    else:
+        results = registry.verify_all_slots()
+        t = Table(title="[bold]Verification of All 20 Model Slots[/bold]", box=box.SIMPLE)
+        t.add_column("Slot", width=4)
+        t.add_column("ID", style="cyan")
+        t.add_column("Status")
+        for num, res in results.items():
+            st_color = "green" if res["verified"] else "red"
+            t.add_row(f"{num:02d}", res["id"], f"[{st_color}]{res['state'].upper()}[/{st_color}]")
+        console.print(t)
+    console.print()
+
+
+@models_app.command("load")
+def models_load(
+    slot: int = typer.Argument(..., help="Slot number (1-20) to load into active memory"),
+) -> None:
+    """Load model slot into memory on demand (enforces max 2 parallel models)."""
+    from guardian.model.slots import get_slot_registry
+    registry = get_slot_registry()
+    res = registry.load_slot(slot)
+    if res.get("success"):
+        console.print(f"\n[bold green]Loaded Slot {slot:02d} (`{res.get('id')}`)[/bold green]")
+        if res.get("evicted_slot"):
+            console.print(f"[yellow]LRU eviction: Evicted Slot {res['evicted_slot']:02d} to enforce max {registry.policy.max_parallel_models} models.[/yellow]")
+        console.print(f"[dim]Currently loaded slots: {res.get('currently_loaded')}[/dim]\n")
+    else:
+        console.print(f"\n[red]Failed to load slot {slot}:[/red] {res.get('error')}\n")
+
+
+@models_app.command("run")
+def models_run(
+    slot: int = typer.Argument(..., help="Slot number (1-20) to execute"),
+    prompt: str = typer.Argument(..., help="Task prompt or query"),
+) -> None:
+    """Run a task prompt on a specific model slot adapter."""
+    from guardian.model.slots import get_slot_registry
+    registry = get_slot_registry()
+    with console.status(f"[dim]Running slot {slot}...[/dim]"):
+        res = registry.run_task(slot, {"prompt": prompt, "query": prompt})
+    console.print()
+    t = Table(title=f"[bold]Execution Result — Slot {slot:02d}[/bold]", box=box.SIMPLE, show_header=False)
+    t.add_column("Field", style="cyan", width=16)
+    t.add_column("Value")
+    t.add_row("Status", res.status.upper())
+    t.add_row("Slot ID", res.slot_id)
+    t.add_row("Output", str(res.output)[:400])
+    if res.error:
+        t.add_row("Error", res.error)
+    console.print(t)
+    console.print()
+
+
+# ─── Digital Access Gateway CLI Commands (Layer 3) ────────────────────────────
+
+@web_app.command("search")
+def web_search_cmd(
+    query: str = typer.Argument(..., help="Search query string"),
+    max_results: int = typer.Option(5, "--limit", "-n", help="Maximum results to return"),
+) -> None:
+    """Layer 3: Search the public web with SSRF validation."""
+    from guardian.web.gateway import get_digital_access_gateway
+    gw = get_digital_access_gateway()
+    results = gw.search_web(query, max_results=max_results)
+    console.print()
+    t = Table(title=f"[bold]Web Search Results: '{query}'[/bold]", box=box.SIMPLE)
+    t.add_column("#", width=3)
+    t.add_column("Title", style="cyan")
+    t.add_column("URL", style="dim")
+    for i, r in enumerate(results, 1):
+        t.add_row(str(i), r.title[:45], r.url[:60])
+    console.print(t)
+    console.print()
+
+
+@web_app.command("fetch")
+def web_fetch_cmd(
+    url: str = typer.Argument(..., help="Target URL to fetch and sanitize"),
+) -> None:
+    """Layer 3: Safe web page retrieval with SSRF defense and untrusted content wrapping."""
+    from guardian.web.gateway import get_digital_access_gateway
+    gw = get_digital_access_gateway()
+    with console.status("[dim]Fetching page with SSRF check...[/dim]"):
+        page = gw.fetch_page(url)
+    console.print()
+    if page.success:
+        console.print(f"[bold green]Fetched Successfully ({page.status_code})[/bold green]: {page.title or url}")
+        preview = page.text[:500] + ("..." if len(page.text) > 500 else "")
+        console.print(Panel(preview, title="[dim]Sanitized Content Preview[/dim]", border_style="dim"))
+    else:
+        console.print(f"[bold red]Fetch Blocked/Failed:[/bold red] {page.error}")
+    console.print()
+
+
+# ─── Permission & Safety Gateway CLI Commands (Layer 4) ───────────────────────
+
+@permissions_app.command("status")
+def permissions_status_cmd() -> None:
+    """Layer 4: Display operational permission tiers, confirmation gates, and kill switch."""
+    from guardian.security.permissions import get_permission_gateway
+    gw = get_permission_gateway()
+    sec = gw.get_security_status()
+    console.print()
+    t = Table(title="[bold]Permission & Operational Safety Gateway (Section 9)[/bold]", box=box.SIMPLE, show_header=False)
+    t.add_column("Field", style="cyan", width=24)
+    t.add_column("Value")
+    t.add_row("Emergency Kill Switch", "[red]ACTIVE (HALTED)[/red]" if sec["kill_switch_active"] else "[green]DISARMED (NORMAL)[/green]")
+    t.add_row("Require Approval", str(sec["require_approval"]))
+    t.add_row("Pending Proposals", str(len(sec["pending_proposals"])))
+    t.add_row("Recent Audit Records", str(sec["recent_audit_records"]))
+    for lvl in sec["permission_levels"]:
+        t.add_row("Permission Level", lvl)
+    console.print(t)
+    console.print()
+
+
+# ─── Voice commands ────────────────────────────────────────────────────────────
 
 @voice_app.command("say")
 def voice_say(
@@ -1305,7 +1634,7 @@ def voice_assistant(
     from guardian.core.session import Session
     from guardian.memory import get_memory_manager
     from guardian.model.registry import get_model
-    from guardian.prompts import GUARDIAN_SYSTEM_PROMPT
+    from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1
     from guardian.skills import GUARDIAN_SKILL
     
     # 1. Start the Presence WebSocket server in a background thread
@@ -1319,9 +1648,9 @@ def voice_assistant(
     backend = get_model(prefer=llm if llm else None)
     try:
         mm = get_memory_manager()
-        system_prompt = mm.build_system_prompt(GUARDIAN_SYSTEM_PROMPT)
+        system_prompt = mm.build_system_prompt(GUARDIAN_MASTER_SYSTEM_PROMPT_V1)
     except Exception:
-        system_prompt = GUARDIAN_SYSTEM_PROMPT
+        system_prompt = GUARDIAN_MASTER_SYSTEM_PROMPT_V1
         
     # Voice-specific prompt: short, spoken-language responses only
     VOICE_PROMPT_ADDITION = (

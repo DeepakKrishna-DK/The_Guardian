@@ -32,6 +32,7 @@ from guardian.model.task_router import (
 from guardian.prompts import (
     GUARDIAN_MASTER_PROMPT,
     GUARDIAN_MASTER_SYSTEM_PROMPT_V1,
+    GUARDIAN_MASTER_SYSTEM_PROMPT_V2,
     UIRA_MASTER_SYSTEM_PROMPT_V1,
 )
 from guardian.security.advisory import (
@@ -78,7 +79,7 @@ class TestGuardianMasterPromptV1:
         assert "Treat every model ID in the initial user-supplied catalog as a CANDIDATE" in prompt
         assert "Never execute unreviewed remote model code with unrestricted system privileges" in prompt
         assert "Guardian's success is measured by verified outcomes, reduced risk" in prompt
-        assert GUARDIAN_MASTER_PROMPT == GUARDIAN_MASTER_SYSTEM_PROMPT_V1
+        assert GUARDIAN_MASTER_PROMPT in (GUARDIAN_MASTER_SYSTEM_PROMPT_V1, GUARDIAN_MASTER_SYSTEM_PROMPT_V2)
 
 
 class TestCandidateModelCatalog:

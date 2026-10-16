@@ -684,7 +684,21 @@ Select the right specialist rather than using every model. Verify capabilities b
 **Guardian's success is measured by verified outcomes, reduced risk, reliable assistance, and accountable operation—not by the number of models it can call.**
 """
 
-GUARDIAN_MASTER_PROMPT = GUARDIAN_MASTER_SYSTEM_PROMPT_V1
+GUARDIAN_MASTER_SYSTEM_PROMPT_V1 = GUARDIAN_MASTER_SYSTEM_PROMPT_V1  # preserved for backwards compatibility
+
+# ---------------------------------------------------------------------------
+# GUARDIAN — UNIVERSAL INTELLIGENCE MASTER SYSTEM PROMPT (Version 2.0)
+# Multi-Model Intelligence, Digital Access, Research, and Defensive Security
+# ---------------------------------------------------------------------------
+import os as _os
+_prompt_txt_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "guardian_master_prompt.txt")
+if _os.path.exists(_prompt_txt_path):
+    with open(_prompt_txt_path, "r", encoding="utf-8") as _f:
+        GUARDIAN_MASTER_SYSTEM_PROMPT_V2 = _f.read()
+else:
+    GUARDIAN_MASTER_SYSTEM_PROMPT_V2 = GUARDIAN_MASTER_SYSTEM_PROMPT_V1
+
+GUARDIAN_MASTER_PROMPT = GUARDIAN_MASTER_SYSTEM_PROMPT_V2
 
 
 # ---------------------------------------------------------------------------

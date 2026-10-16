@@ -36,7 +36,7 @@ from guardian.model.interface import (
     ModelInterface,
     ModelRequest,
 )
-from guardian.prompts import GUARDIAN_SYSTEM_PROMPT
+from guardian.prompts import GUARDIAN_MASTER_SYSTEM_PROMPT_V1 as GUARDIAN_SYSTEM_PROMPT  # v1.0 default
 
 log = get_logger(__name__)
 
