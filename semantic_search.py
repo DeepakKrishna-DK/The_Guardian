@@ -16,6 +16,7 @@ Key features:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import sqlite3
@@ -47,18 +48,79 @@ CANDIDATE_LIMIT = 30
 # Embedding Model Loader (Cached & Defensive)
 # ---------------------------------------------------------------------------
 
+class DeterministicFallbackEncoder:
+    """
+    Deterministic, lightweight embedding encoder used when sentence-transformers
+    is not installed (e.g. in CI or headless environments).
+    Produces normalized 384-dimensional float32 vectors derived from token hashes
+    and character n-grams.
+    """
+
+    def __init__(self, dim: int = 384) -> None:
+        self.dim = dim
+
+    def _hash_token(self, token: str) -> np.ndarray:
+        seed = int(hashlib.sha256(token.encode("utf-8")).hexdigest()[:8], 16)
+        rng = np.random.RandomState(seed)
+        v = rng.standard_normal(self.dim).astype(np.float32)
+        norm = float(np.linalg.norm(v))
+        return v / (norm + 1e-9)
+
+    def encode(
+        self,
+        sentences: str | list[str],
+        normalize_embeddings: bool = True,
+        show_progress_bar: bool = False,
+    ) -> np.ndarray:
+        single = isinstance(sentences, str)
+        items = [sentences] if single else list(sentences)
+        stopwords = {
+            "a", "an", "the", "in", "on", "at", "to", "for", "of", "with",
+            "by", "from", "its", "it", "is", "was", "are", "were", "how",
+        }
+        vecs = []
+        for text in items:
+            tokens = re.findall(r"\w+", text.lower())
+            if not tokens:
+                v = np.zeros(self.dim, dtype=np.float32)
+            else:
+                v = np.zeros(self.dim, dtype=np.float32)
+                for t in tokens:
+                    weight = 0.2 if t in stopwords else 1.0
+                    v += weight * self._hash_token(t)
+                for t in tokens:
+                    if t not in stopwords and len(t) >= 4:
+                        for i in range(len(t) - 2):
+                            v += 0.3 * self._hash_token(t[i : i + 3])
+            if normalize_embeddings:
+                norm = float(np.linalg.norm(v))
+                if norm > 0:
+                    v = v / norm
+            vecs.append(v)
+
+        result = np.array(vecs, dtype=np.float32)
+        return result[0] if single else result
+
+
 @lru_cache(maxsize=2)
 def get_model(model_name: str = EMBEDDING_MODEL) -> Any:
     """
     Load the sentence embedding model once per process.
-    Returns None if sentence-transformers is not available.
+    If sentence-transformers is unavailable, falls back to DeterministicFallbackEncoder
+    so offline/CI environments can index and search vectors deterministically.
     """
+    if model_name in ("fallback", "mock", "deterministic"):
+        return DeterministicFallbackEncoder(dim=384)
+
     try:
         from sentence_transformers import SentenceTransformer
         return SentenceTransformer(model_name)
     except Exception as exc:
-        log.warning(f"Could not load SentenceTransformer ('{model_name}'): {exc}")
-        return None
+        log.warning(
+            f"Could not load SentenceTransformer ('{model_name}': {exc}); "
+            "using DeterministicFallbackEncoder."
+        )
+        return DeterministicFallbackEncoder(dim=384)
 
 
 # ---------------------------------------------------------------------------
